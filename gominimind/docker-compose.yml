@@ -1,0 +1,252 @@
+version: '3.8'
+
+services:
+  # MiniMind API Server
+  minimind-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: minimind-api:latest
+    container_name: minimind-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - GIN_MODE=release
+      - PORT=8000
+      - HOST=0.0.0.0
+      - LOG_LEVEL=info
+      - CONFIG_PATH=/app/configs/default.yaml
+      - API_KEY=${MINIMIND_API_KEY:-default_key}
+      - MODEL_PATH=/app/models/minimind
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgres://minimind:password@postgres:5432/minimind
+    volumes:
+      - ./models:/app/models
+      - ./configs:/app/configs
+      - ./logs:/app/logs
+      - ./data:/app/data
+    depends_on:
+      - redis
+      - postgres
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - minimind-network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: minimind-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_password}
+    volumes:
+      - redis-data:/data
+      - ./configs/redis.conf:/etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - minimind-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # PostgreSQL for data persistence
+  postgres:
+    image: postgres:15-alpine
+    container_name: minimind-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=minimind
+      - POSTGRES_USER=minimind
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres_password}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF8
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./configs/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U minimind -d minimind"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - minimind-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    container_name: minimind-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./configs/nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - minimind-api
+    networks:
+      - minimind-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # Prometheus for monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: minimind-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - minimind-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: minimind-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./configs/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./configs/grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+    networks:
+      - minimind-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # Redis Commander for Redis management
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: minimind-redis-commander
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_HOSTS=local:redis:6379:0
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_password}
+    depends_on:
+      - redis
+    networks:
+      - minimind-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # pgAdmin for PostgreSQL management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: minimind-pgadmin
+    restart: unless-stopped
+    ports:
+      - "8082:80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@minimind.local
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD:-admin}
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - minimind-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+# Named volumes for data persistence
+volumes:
+  redis-data:
+    driver: local
+  postgres-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  pgadmin-data:
+    driver: local
+
+# Custom network for service communication
+networks:
+  minimind-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# Environment variables configuration
+x-environment: &default-environment
+  MINIMIND_API_KEY: ${MINIMIND_API_KEY:-your_api_key_here}
+  REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_password}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password}
+  GRAFANA_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+  PGADMIN_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+
+# Service configurations
+x-deploy: &default-deploy
+  replicas: 1
+  update_config:
+    parallelism: 1
+    delay: 10s
+  restart_policy:
+    condition: on-failure
+    delay: 5s
+    max_attempts: 3
+    window: 120s
+
+# Health check configuration
+x-healthcheck: &default-healthcheck
+  test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 40s

@@ -1,0 +1,259 @@
+# GoMiniMind 生产环境配置文件
+# 此配置适用于生产环境部署
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  read_timeout: 60
+  write_timeout: 120
+  idle_timeout: 300
+  max_body_size: 50
+  
+  tls:
+    enabled: true
+    cert_file: "/etc/gominimind/ssl/cert.pem"
+    key_file: "/etc/gominimind/ssl/key.pem"
+  
+  http2:
+    enabled: true
+
+model:
+  type: minimind
+  name: minimind-production
+  path: "/opt/gominimind/models/minimind.pth"
+  dim: 768
+  num_layers: 12
+  num_heads: 12
+  max_seq_length: 2048
+  vocab_size: 100000
+  
+  inference:
+    temperature: 0.7
+    max_tokens: 2048
+    top_k: 50
+    top_p: 0.95
+    repetition_penalty: 1.1
+    use_fp16: true
+    use_flash_attention: true
+    num_threads: 0
+  
+  batch:
+    max_size: 16
+    timeout: 100
+    dynamic: true
+  
+  cache:
+    enabled: true
+    max_size_mb: 2048
+    ttl: "2h"
+
+api:
+  version: "v1"
+  api_key: ""  # 从环境变量读取: GOMINIMIND_API_KEY
+  
+  cors:
+    enabled: true
+    origins:
+      - "https://app.example.com"
+      - "https://api.example.com"
+    methods:
+      - "GET"
+      - "POST"
+      - "OPTIONS"
+    headers:
+      - "Authorization"
+      - "Content-Type"
+      - "X-Request-ID"
+    allow_credentials: true
+    max_age: 3600
+  
+  rate_limit:
+    enabled: true
+    requests_per_second: 100
+    burst_size: 200
+    strategy: user
+    per_user:
+      enabled: true
+      requests_per_second: 30
+      burst_size: 50
+  
+  auth:
+    type: api_key
+    jwt:
+      secret: ""  # 从环境变量读取
+      algorithm: "HS256"
+      expiry: "24h"
+      issuer: "gominimind"
+  
+  request:
+    max_message_length: 8192
+    max_turns: 100
+    require_system_prompt: false
+    validate_input: true
+
+database:
+  type: postgresql
+  dsn: ""  # 从环境变量读取
+  
+  pool:
+    max_connections: 200
+    max_idle: 20
+    max_lifetime: "30m"
+    max_open_time: "30m"
+  
+  postgresql:
+    host: "${DB_HOST}"
+    port: 5432
+    database: "gominimind"
+    username: "${DB_USER}"
+    password: "${DB_PASSWORD}"
+    ssl_mode: "require"
+  
+  log_level: "error"
+  auto_migrate: true
+
+cache:
+  backend: redis
+  
+  memory:
+    max_size_mb: 512
+    ttl: "1h"
+    cleanup_interval: "10m"
+  
+  redis:
+    host: "${REDIS_HOST}"
+    port: 6379
+    password: "${REDIS_PASSWORD}"
+    database: 0
+    pool_size: 50
+    min_idle: 20
+    max_conn_age: "30m"
+    idle_timeout: "10m"
+    timeout: "5s"
+    pool_timeout: "10s"
+  
+  compression:
+    enabled: true
+    threshold_bytes: 1024
+    algorithm: "gzip"
+  
+  strategies:
+    model_output:
+      ttl: "10m"
+      max_size: "500mb"
+    embeddings:
+      ttl: "2h"
+      max_size: "1gb"
+    session:
+      ttl: "48h"
+      max_size: "100mb"
+
+log:
+  level: "warn"
+  format: "json"
+  output: "file"
+  
+  file:
+    path: "/var/log/gominimind/application.log"
+    max_size_mb: 500
+    max_backups: 30
+    max_age_days: 90
+    compress: true
+  
+  request_id: true
+  stacktrace: true
+  
+  sampling:
+    enabled: true
+    initial: 1000
+    thereafter: 1000
+
+monitoring:
+  enabled: true
+  
+  prometheus:
+    enabled: true
+    path: "/metrics"
+    namespace: "gominimind"
+    subsystem: "api"
+  
+  health_check:
+    enabled: true
+    path: "/health"
+    detailed_path: "/health/detailed"
+  
+  metrics:
+    latency_histogram: true
+    latency_buckets: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30]
+    response_size_histogram: true
+    custom:
+      model_inference_time: true
+      token_generation_rate: true
+  
+  tracing:
+    enabled: true
+    type: jaeger
+    endpoint: "${JAEGER_ENDPOINT}"
+    service_name: "gominimind"
+    propagation: "w3c"
+
+security:
+  ip_whitelist:
+    enabled: false
+    allowed_ips: []
+  
+  content_security:
+    check_input: true
+    sensitive_words: []
+    max_input_length: 20000
+    blocked_patterns: []
+  
+  request_signing:
+    enabled: false
+    algorithm: "sha256"
+    header: "X-Signature"
+    exclude_headers: []
+
+performance:
+  preallocate:
+    enabled: true
+    tensor_cache_mb: 1024
+  
+  worker_pool:
+    enabled: true
+    size: 200
+    queue_size: 2000
+    timeout: "60s"
+  
+  memory_pool:
+    enabled: true
+    max_pools: 20
+    pool_size: 2048
+  
+  hot_paths:
+    - "ChatCompletion"
+    - "Embedding"
+    - "Tokenization"
+
+extensions:
+  plugin_dir: "/opt/gominimind/plugins"
+  enabled_plugins: []
+  
+  webhooks:
+    enabled: true
+    events:
+      - "model.inference"
+      - "api.error"
+    secret: "${WEBHOOK_SECRET}"
+  
+  middleware:
+    enabled: false
+    directory: "/opt/gominimind/middleware"
+
+development:
+  debug: false
+  pprof:
+    enabled: false
+    path: "/debug/pprof"
+  test_mode: false
+  mock_responses: false

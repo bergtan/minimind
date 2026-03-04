@@ -1,0 +1,405 @@
+# GoReleaser configuration for GoMiniMind
+# Documentation: https://goreleaser.com/
+
+# Project metadata
+project_name: gominimind
+
+# Build configuration
+builds:
+  - id: serve_openai_api
+    main: ./cmd/serve_openai_api/main.go
+    binary: gominimind
+    
+    # Build flags
+    flags:
+      - -v
+      - -trimpath
+    
+    # GOARCH and GOOS
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - 7
+    
+    # Exclude combinations
+    ignore:
+      - goos: darwin
+        goarch: arm
+      - goos: windows
+        goarch: arm
+    
+    # Default ldflags
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+      - -X main.builtBy=GoReleaser
+    
+    # CGO is disabled for cross-compilation
+    env:
+      - CGO_ENABLED=0
+
+  - id: train
+    main: ./cmd/train/main.go
+    binary: gominimind-train
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+    env:
+      - CGO_ENABLED=0
+
+  - id: convert_model
+    main: ./cmd/convert_model/main.go
+    binary: gominimind-convert
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+    env:
+      - CGO_ENABLED=0
+
+  - id: evaluate
+    main: ./cmd/evaluate/main.go
+    binary: gominimind-eval
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+    env:
+      - CGO_ENABLED=0
+
+# Archive configuration
+archives:
+  - id: archives
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    
+    # Archive format
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    
+    # Files to include in archive
+    files:
+      - LICENSE
+      - README.md
+      - config/**.yaml
+      - config/**.json
+      - templates/**/*.tmpl
+    
+    # Archive options
+    wrap_in_directory: true
+
+# Checksum configuration
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+# Snapshot configuration
+snapshot:
+  name_template: "{{ .Tag }}-next"
+
+# Changelog configuration
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^style:"
+  groups:
+    - title: Features
+      regexp: "^feat[:\\(]"
+      order: 0
+    - title: Bug Fixes
+      regexp: "^fix[:\\(]"
+      order: 1
+    - title: Improvements
+      regexp: "^perf[:\\(]|^refactor[:\\(]"
+      order: 2
+    - title: Other
+      order: 999
+
+# Release configuration
+release:
+  github:
+    owner: minimind
+    name: gominimind
+  
+  # Release notes
+  name_template: "GoMiniMind {{ .Version }}"
+  
+  # Release body
+  header: |
+    ## GoMiniMind Release {{ .Version }}
+    
+    Welcome to this release of GoMiniMind!
+    
+  footer: |
+    ## Docker Images
+    
+    ```bash
+    docker pull ghcr.io/minimind/gominimind:{{ .Version }}
+    docker pull ghcr.io/minimind/gominimind:latest
+    ```
+    
+    ## Documentation
+    
+    For full documentation, visit: https://github.com/minimind/gominimind/blob/main/README.md
+  
+  # Extra files to include in release
+  extra_files:
+    - glob: ./LICENSE
+    - glob: ./README.md
+    - glob: ./CHANGELOG.md
+    - glob: ./docs/**/*.md
+  
+  # Draft and prerelease settings
+  draft: false
+  prerelease: auto
+
+# Docker configuration
+dockers:
+  - id: gominimid-amd64
+    ids:
+      - serve_openai_api
+    image_templates:
+      - "ghcr.io/minimind/gominimind:{{ .Version }}-amd64"
+      - "ghcr.io/minimind/gominimind:latest-amd64"
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source=https://github.com/minimind/gominimind"
+
+  - id: gominimind-arm64
+    ids:
+      - serve_openai_api
+    image_templates:
+      - "ghcr.io/minimind/gominimind:{{ .Version }}-arm64"
+      - "ghcr.io/minimind/gominimind:latest-arm64"
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source=https://github.com/minimind/gominimind"
+    goarch: arm64
+
+docker_manifests:
+  - name_template: "ghcr.io/minimind/gominimind:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/minimind/gominimind:{{ .Version }}-amd64"
+      - "ghcr.io/minimind/gominimind:{{ .Version }}-arm64"
+  
+  - name_template: "ghcr.io/minimind/gominimind:latest"
+    image_templates:
+      - "ghcr.io/minimind/gominimind:latest-amd64"
+      - "ghcr.io/minimind/gominimind:latest-arm64"
+
+# Nightly builds
+nightly:
+  name_template: '{{ incpatch .Version }}-nightly'
+  tag_name: nightly
+  publish_release: true
+  keep: 7
+
+# Homebrew formula
+brews:
+  - name: gominimind
+    repository:
+      owner: minimind
+      name: homebrew-tap
+    folder: Formula
+    homepage: "https://github.com/minimind/gominimind"
+    description: "Go implementation of MiniMind - a small LLM"
+    license: "MIT"
+    dependencies:
+      - name: go
+        type: build
+      - name: openssl
+    
+    install: |
+      bin.install "gominimind"
+      bin.install "gominimind-train" if build.with?("train")
+      bin.install "gominimind-convert" if build.with?("convert")
+      bin.install "gominimind-eval" if build.with?("eval")
+      
+    test: |
+      system "#{bin}/gominimind", "--version"
+
+# Scoop bucket (Windows)
+scoops:
+  - repository:
+      owner: minimind
+      name: scoop-bucket
+    folder: bucket
+    homepage: "https://github.com/minimind/gominimind"
+    description: "Go implementation of MiniMind - a small LLM"
+    license: MIT
+    bucket:
+      owner: minimind
+      name: scoop-bucket
+    
+    # Scoop-specific settings
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
+
+# Snapcraft (Ubuntu Snap Store)
+snapcrafts:
+  - name: gominimind
+    summary: GoMiniMind - A small LLM server
+    description: |
+      GoMiniMind is a Go implementation of MiniMind, 
+      providing a small and efficient LLM server with 
+      OpenAI-compatible API.
+    grade: stable
+    confinement: strict
+    license: MIT
+    base: core22
+    
+    # Applications
+    apps:
+      gominimind:
+        command: gominimind
+        plugs:
+          - home
+          - network
+          - network-bind
+    
+    # Build packages
+    build_packages:
+      - gcc
+    
+    # Channels
+    channel_templates:
+      - "{{ .Major }}.{{ .Minor }}/stable"
+      - "{{ .Major }}/stable"
+      - "stable"
+
+# SBOM (Software Bill of Materials)
+sboms:
+  - id: archive
+    artifacts: archive
+  - id: source
+    artifacts: source
+
+# Sign artifacts
+signs:
+  - artifacts: checksum
+    args:
+      - "--batch"
+      - "--local-user"
+      - "{{ .Env.GPG_FINGERPRINT }}"
+      - "--output"
+      - "${signature}"
+      - "--detach-sign"
+      - "${artifact}"
+
+# Notarize macOS binaries (optional)
+notarize:
+  macos:
+    enabled: true
+    sign:
+      certificate: "{{ .Env.MACOS_SIGN_CERTIFICATE }}"
+      password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+    notarize:
+      issuer_id: "{{ .Env.MACOS_NOTARIZE_ISSUER_ID }}"
+      key_id: "{{ .Env.MACOS_NOTARIZE_KEY_ID }}"
+      key: "{{ .Env.MACOS_NOTARIZE_KEY }}"
+      wait: true
+      timeout: 10m
+
+# Announce configuration
+announce:
+  # Twitter
+  twitter:
+    enabled: true
+    message_template: |
+      GoMiniMind {{.Tag}} is out! 
+      
+      Check it out: {{ .ReleaseURL }}
+      
+      #golang #llm #ai #opensource
+  
+  # Mastodon
+  mastodon:
+    enabled: false
+    server: ""
+  
+  # Slack
+  slack:
+    enabled: true
+    message_template: "GoMiniMind {{.Tag}} is out! {{ .ReleaseURL }}"
+    channel: '#releases'
+
+# GitHub Actions integration
+git:
+  # Tag format
+  tag_sort: version:refname
+  
+  # Pre-release tag detection
+  prerelease_suffix: "-rc"
+  
+  # Changelog generation
+  ignore_tags:
+    - nightly
+    - latest
+
+# Environment variables for signing
+gitlab_urls:
+  use_package_registry: true
+
+# Milestone management (GitHub/GitLab)
+milestones:
+  - close: true
+    name_template: "{{ .Major }}.{{ .Minor }}.{{ .Patch }}"
+    fallback_name_template: "{{ .Tag }}"
+
+# Artifact upload configuration
+blobs:
+  - provider: s3
+    bucket: gominimind-releases
+    folder: "{{ .Version }}"
+  
+  - provider: gs
+    bucket: gominimind-releases
+    folder: "{{ .Version }}"

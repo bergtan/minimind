@@ -1,0 +1,413 @@
+# GoMiniMind 主配置文件
+# 详细配置说明请参考 README.md
+
+# 服务器配置
+server:
+  # 监听地址
+  host: "0.0.0.0"
+  
+  # 监听端口
+  port: 8080
+  
+  # 读取超时(秒)
+  read_timeout: 30
+  
+  # 写入超时(秒)
+  write_timeout: 30
+  
+  # 空闲超时(秒)
+  idle_timeout: 120
+  
+  # 最大请求体大小(MB)
+  max_body_size: 10
+  
+  # 是否启用TLS
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
+  
+  # 是否启用HTTP/2
+  http2:
+    enabled: true
+
+# 模型配置
+model:
+  # 模型类型: minimind, custom
+  type: minimind
+  
+  # 模型名称
+  name: minimind
+  
+  # 模型文件路径
+  path: "./models/minimind.pth"
+  
+  # 模型参数
+  dim: 512
+  num_layers: 8
+  num_heads: 8
+  max_seq_length: 512
+  vocab_size: 50000
+  
+  # 推理配置
+  inference:
+    # 默认温度
+    temperature: 0.7
+    
+    # 默认最大token数
+    max_tokens: 256
+    
+    # Top-k采样
+    top_k: 40
+    
+    # Top-p采样(nucleus)
+    top_p: 0.95
+    
+    # 重复惩罚
+    repetition_penalty: 1.1
+    
+    # 是否启用FP16
+    use_fp16: true
+    
+    # 是否启用Flash Attention
+    use_flash_attention: true
+    
+    # CPU线程数(0表示自动)
+    num_threads: 0
+  
+  # 批处理配置
+  batch:
+    # 最大批处理大小
+    max_size: 8
+    
+    # 批处理超时(ms)
+    timeout: 50
+    
+    # 动态批处理
+    dynamic: true
+  
+  # 模型缓存
+  cache:
+    enabled: true
+    max_size_mb: 1024
+    ttl: "1h"
+
+# API配置
+api:
+  # API版本
+  version: "v1"
+  
+  # API密钥(生产环境请使用环境变量)
+  api_key: ""
+  
+  # 允许CORS的域名
+  cors:
+    enabled: true
+    origins:
+      - "*"
+    methods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "DELETE"
+      - "OPTIONS"
+    headers:
+      - "Authorization"
+      - "Content-Type"
+      - "X-Request-ID"
+    allow_credentials: false
+    max_age: 86400
+  
+  # 限流配置
+  rate_limit:
+    # 是否启用限流
+    enabled: true
+    
+    # 每秒请求数
+    requests_per_second: 10
+    
+    # 突发请求数
+    burst_size: 20
+    
+    # 限流策略: ip, user, global
+    strategy: ip
+    
+    # 按用户限流
+    per_user:
+      enabled: true
+      requests_per_second: 5
+      burst_size: 10
+  
+  # 认证配置
+  auth:
+    # 认证方式: api_key, jwt, oauth
+    type: api_key
+    
+    # JWT配置(当type=jwt时)
+    jwt:
+      secret: ""
+      algorithm: "HS256"
+      expiry: "24h"
+      issuer: "gominimind"
+    
+    # OAuth配置(当type=oauth时)
+    oauth:
+      provider: ""
+      client_id: ""
+      client_secret: ""
+      redirect_url: ""
+  
+  # 请求配置
+  request:
+    # 最大消息长度
+    max_message_length: 4096
+    
+    # 最大对话轮数
+    max_turns: 50
+    
+    # 强制使用系统提示
+    require_system_prompt: false
+    
+    # 验证输入
+    validate_input: true
+
+# 数据库配置
+database:
+  # 数据库类型: sqlite, postgresql, mysql
+  type: sqlite
+  
+  # 连接字符串
+  dsn: "./data/gominimind.db"
+  
+  # 连接池配置
+  pool:
+    max_connections: 100
+    max_idle: 10
+    max_lifetime: "1h"
+    max_open_time: "1h"
+  
+  # PostgreSQL配置(当type=postgresql时)
+  postgresql:
+    host: "localhost"
+    port: 5432
+    database: "gominimind"
+    username: ""
+    password: ""
+    ssl_mode: "disable"
+  
+  # MySQL配置(当type=mysql时)
+  mysql:
+    host: "localhost"
+    port: 3306
+    database: "gominimind"
+    username: ""
+    password: ""
+    params: "charset=utf8mb4&parseTime=True&loc=Local"
+  
+  # 日志级别: silent, error, warn, info
+  log_level: "warn"
+  
+  # 自动迁移
+  auto_migrate: false
+
+# 缓存配置
+cache:
+  # 缓存后端: memory, redis
+  backend: memory
+  
+  # 内存缓存配置
+  memory:
+    max_size_mb: 256
+    ttl: "1h"
+    cleanup_interval: "10m"
+  
+  # Redis配置(当backend=redis时)
+  redis:
+    host: "localhost"
+    port: 6379
+    password: ""
+    database: 0
+    pool_size: 10
+    min_idle: 5
+    max_conn_age: "30m"
+    idle_timeout: "5m"
+    timeout: "5s"
+    pool_timeout: "4s"
+  
+  # 压缩配置
+  compression:
+    enabled: true
+    threshold_bytes: 1024
+    algorithm: "gzip"
+  
+  # 缓存策略
+  strategies:
+    model_output:
+      ttl: "5m"
+      max_size: "100mb"
+    embeddings:
+      ttl: "1h"
+      max_size: "500mb"
+    session:
+      ttl: "24h"
+      max_size: "50mb"
+
+# 日志配置
+log:
+  # 日志级别: debug, info, warn, error, fatal
+  level: "info"
+  
+  # 日志格式: json, console
+  format: "json"
+  
+  # 日志输出: stdout, stderr, file
+  output: "stdout"
+  
+  # 文件日志配置(当output=file时)
+  file:
+    path: "./logs/gominimind.log"
+    max_size_mb: 100
+    max_backups: 10
+    max_age_days: 30
+    compress: true
+  
+  # 是否记录请求ID
+  request_id: true
+  
+  # 是否记录堆栈跟踪
+  stacktrace: false
+  
+  # 采样配置(高性能场景)
+  sampling:
+    enabled: false
+    initial: 100
+    thereafter: 100
+
+# 监控配置
+monitoring:
+  # 是否启用监控
+  enabled: true
+  
+  # Prometheus配置
+  prometheus:
+    enabled: true
+    path: "/metrics"
+    namespace: "gominimind"
+    subsystem: "api"
+  
+  # 健康检查配置
+  health_check:
+    enabled: true
+    path: "/health"
+    detailed_path: "/health/detailed"
+  
+  # 性能指标
+  metrics:
+    # 请求延迟
+    latency_histogram: true
+    latency_buckets: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]
+    
+    # 响应大小
+    response_size_histogram: true
+    
+    # 自定义指标
+    custom:
+      model_inference_time: true
+      token_generation_rate: true
+  
+  # 链路追踪
+  tracing:
+    enabled: false
+    type: "jaeger"  # jaeger, zipkin
+    endpoint: "http://localhost:14268/api/traces"
+    service_name: "gominimind"
+    propagation: "w3c"
+
+# 安全配置
+security:
+  # IP白名单
+  ip_whitelist:
+    enabled: false
+    allowed_ips: []
+  
+  # 内容安全
+  content_security:
+    # 输入检查
+    check_input: true
+    
+    # 敏感词过滤
+    sensitive_words: []
+    
+    # 最大输入长度
+    max_input_length: 10000
+    
+    # 禁止的内容模式(正则表达式)
+    blocked_patterns: []
+  
+  # 请求签名
+  request_signing:
+    enabled: false
+    algorithm: "sha256"
+    header: "X-Signature"
+    exclude_headers: []
+
+# 性能优化
+performance:
+  # 预分配内存
+  preallocate:
+    enabled: true
+    tensor_cache_mb: 512
+  
+  # 工作线程池
+  worker_pool:
+    enabled: true
+    size: 100
+    queue_size: 1000
+    timeout: "30s"
+  
+  # 内存池
+  memory_pool:
+    enabled: true
+    max_pools: 10
+    pool_size: 1024
+  
+  # 热路径优化
+  hot_paths:
+    - "ChatCompletion"
+    - "Embedding"
+    - "Tokenization"
+
+# 扩展功能
+extensions:
+  # 插件目录
+  plugin_dir: "./plugins"
+  
+  # 启用插件列表
+  enabled_plugins: []
+  
+  # Webhook配置
+  webhooks:
+    enabled: false
+    events: []
+    secret: ""
+  
+  # 自定义中间件
+  middleware:
+    enabled: false
+    directory: "./middleware"
+
+# 开发配置
+development:
+  # 调试模式
+  debug: false
+  
+  # 性能分析
+  pprof:
+    enabled: false
+    path: "/debug/pprof"
+  
+  # 测试模式
+  test_mode: false
+  
+  # 模拟响应
+  mock_responses: false

@@ -1,0 +1,399 @@
+name: Go CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run weekly on Sunday at 2am
+    - cron: '0 2 * * 0'
+
+env:
+  GO_VERSION: '1.21'
+  DOCKER_REGISTRY: 'ghcr.io'
+  IMAGE_NAME: 'minimind/gominimind'
+
+jobs:
+  # Unit Tests and Linting
+  test:
+    name: Run Tests and Linting
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: [1.20, 1.21, 1.22]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/.cache/go-build
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Install dependencies
+      run: |
+        go mod download
+        go mod verify
+
+    - name: Run golangci-lint
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: latest
+        args: --timeout=5m
+
+    - name: Run static analysis
+      run: |
+        # Check for unused dependencies
+        go mod tidy
+        git diff --exit-code
+        
+        # Check for security vulnerabilities
+        go vet ./...
+        
+        # Check for race conditions
+        go test -race ./...
+
+    - name: Run unit tests
+      run: |
+        go test -v -coverprofile=coverage.out -covermode=atomic ./...
+        go tool cover -html=coverage.out -o coverage.html
+
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.out
+        flags: unittests
+        name: codecov-umbrella
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-results-${{ matrix.go-version }}
+        path: |
+          coverage.out
+          coverage.html
+        retention-days: 30
+
+  # Integration Tests
+  integration:
+    name: Run Integration Tests
+    runs-on: ubuntu-latest
+    needs: test
+    
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Install dependencies
+      run: go mod download
+
+    - name: Run integration tests
+      run: |
+        # Set test environment variables
+        export REDIS_URL="redis://localhost:6379"
+        export API_KEY="test-integration-key"
+        export MODEL_PATH="./test-models"
+        
+        # Create test model directory
+        mkdir -p test-models
+        
+        # Run integration tests with longer timeout
+        go test -v -tags=integration -timeout=30m ./internal/integration/...
+
+    - name: Run API integration tests
+      run: |
+        # Start the API server in background
+        go run cmd/serve_openai_api/main.go --host localhost --port 8081 --api_key test-key &
+        SERVER_PID=$!
+        
+        # Wait for server to start
+        sleep 10
+        
+        # Run API integration tests
+        go test -v -tags=api_integration ./internal/api/integration/...
+        
+        # Stop the server
+        kill $SERVER_PID
+
+  # Security Scanning
+  security:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Go security scanner
+      uses: securego/gosec@master
+      with:
+        args: '-exclude=G101,G104 ./...'  # Exclude false positives
+
+    - name: Run dependency vulnerability scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload security scan results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: trivy-results.sarif
+
+  # Build and Package
+  build:
+    name: Build and Package
+    runs-on: ubuntu-latest
+    needs: [test, integration, security]
+    
+    strategy:
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+        include:
+          - platform: linux/amd64
+            docker_platform: linux/amd64
+            binary_suffix: linux-amd64
+          - platform: linux/arm64
+            docker_platform: linux/arm64
+            binary_suffix: linux-arm64
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.DOCKER_REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v4
+      with:
+        images: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=sha
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        platforms: ${{ matrix.platform }}
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Build binaries
+      run: |
+        # Build for multiple platforms
+        GOOS=linux GOARCH=amd64 go build -o bin/gominimind-linux-amd64 ./cmd/serve_openai_api
+        GOOS=linux GOARCH=arm64 go build -o bin/gominimind-linux-arm64 ./cmd/serve_openai_api
+        GOOS=darwin GOARCH=amd64 go build -o bin/gominimind-darwin-amd64 ./cmd/serve_openai_api
+        GOOS=darwin GOARCH=arm64 go build -o bin/gominimind-darwin-arm64 ./cmd/serve_openai_api
+        GOOS=windows GOARCH=amd64 go build -o bin/gominimind-windows-amd64.exe ./cmd/serve_openai_api
+
+    - name: Upload binaries
+      uses: actions/upload-artifact@v3
+      with:
+        name: gominimind-binaries
+        path: bin/
+        retention-days: 30
+
+  # Performance Testing
+  performance:
+    name: Performance Testing
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Run performance benchmarks
+      run: |
+        # Run benchmarks with detailed output
+        go test -bench=. -benchmem -benchtime=10s ./internal/benchmarks/...
+        
+        # Run memory profiling
+        go test -bench=. -benchmem -memprofile=mem.pprof -cpuprofile=cpu.pprof ./internal/benchmarks/...
+
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v3
+      with:
+        name: benchmark-results
+        path: |
+          mem.pprof
+          cpu.pprof
+        retention-days: 30
+
+  # Documentation Generation
+  docs:
+    name: Generate Documentation
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Generate API documentation
+      run: |
+        # Generate Go documentation
+        godoc -http=:6060 &
+        DOC_PID=$!
+        
+        # Wait for godoc to start
+        sleep 5
+        
+        # Download documentation
+        wget -r -np -N -E -p -k http://localhost:6060/pkg/minimind/ || true
+        
+        # Stop godoc
+        kill $DOC_PID
+
+    - name: Generate OpenAPI specification
+      run: |
+        # Start server and generate OpenAPI spec
+        go run cmd/generate_openapi/main.go
+
+    - name: Deploy documentation
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs
+        publish_branch: gh-pages
+        force_orphan: true
+
+  # Release
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [build, performance, docs]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Run GoReleaser
+      uses: goreleaser/goreleaser-action@v4
+      with:
+        version: latest
+        args: release --rm-dist
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Download binaries from build job
+      uses: actions/download-artifact@v3
+      with:
+        name: gominimind-binaries
+        path: dist/
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          dist/*
+          README.md
+          LICENSE
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Notifications
+  notify:
+    name: Notify Status
+    runs-on: ubuntu-latest
+    needs: [test, integration, security, build, performance]
+    if: always()
+    
+    steps:
+    - name: Notify Slack on failure
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        text: |
+          Pipeline ${{ job.status }} for ${{ github.repository }}
+          Commit: ${{ github.sha }}
+          Workflow: ${{ github.workflow }}
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        channel: '#ci-cd'
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+    - name: Notify Discord on success
+      if: success()
+      uses: Ilshidur/action-discord@master
+      with:
+        webhook_url: ${{ secrets.DISCORD_WEBHOOK }}
+        content: "✅ Pipeline succeeded for ${{ github.repository }} - ${{ github.sha }}"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true

@@ -1,0 +1,449 @@
+# golangci-lint 配置文件
+# 用于GoMiniMind项目的代码质量和风格检查
+# 详细文档: https://golangci-lint.run/usage/configuration/
+
+run:
+  # 超时时间
+  timeout: 5m
+  
+  # 并发执行的检测器数量
+  concurrency: 4
+  
+  # 跳过检查的目录
+  skip-dirs:
+    - vendor
+    - third_party
+    - ".git"
+    - build
+    - dist
+  
+  # 跳过文件的模式
+  skip-files:
+    - '.*\\.pb\\.go$'
+    - '.*\\.gen\\.go$'
+    - '.*_test\.go'
+  
+  # 启用模块支持
+  modules-download-mode: readonly
+  
+  # 允许并行运行的Go版本
+  go: "1.21"
+
+# 输出配置
+output:
+  # 输出格式
+  format: colored-line-number
+  
+  # 打印行号
+  print-issued-lines: true
+  
+  # 打印发出消息的行号
+  print-linter-name: true
+  
+  # 对于单个文件的多个相同错误,只打印一次
+  uniq-by-line: true
+  
+  # 按路径排序结果
+  sort-results: true
+
+# 通用检测器配置
+linters-settings:
+  # 错误检查
+  errcheck:
+    # 忽略错误的模式
+    ignore: fmt:.*,io/ioutil:^Read.*
+    # 忽略以下包的导出函数的错误检查
+    ignore: fmt:.*,os:^Create.*
+    # 检查错误返回值被使用
+    check-blank: true
+  
+  # Gocode分析
+  gocritic:
+    # 启用特定的检查
+    enabled-checks:
+      - appendCombine
+      - argOrder
+      - assignOp
+      - badCond
+      - boolExprSimplify
+      - builtinShadow
+      - captLocal
+      - caseOrder
+      - commentFormatting
+      - commentedOutCode
+      - commentedOutImport
+      - defaultCaseOrder
+      - dupArg
+      - dupBranchBody
+      - dupCase
+      - dupSubExpr
+      - elseif
+      - emptyFallthrough
+      - emptyStringTest
+      - equalFold
+      - evalOrder
+      - exitAfterDefer
+      - flagDeref
+      - flagName
+      - hexLiteral
+      -HugeParam
+      - ifElseChain
+      - importShadow
+      - indexAlloc
+      - initClause
+      - mapKey
+      - methodExprCall
+      - nestingReduce
+      - newDeref
+      - nilValReturn
+      - octalLiteral
+      - offBy1
+      - paramTypeCombine
+      - ptrToRefParam
+      - rangeExprCopy
+      - rangeValCopy
+      - regexpMust
+      - sloppyLen
+      - sloppyReassign
+      - sloppyTestFuncName
+      - sliceClear
+      - stringXbytes
+      - stringsCompare
+      - switchTrue
+      - syncMapRange
+      - truncateCmp
+      - typeAssertChain
+      - typeDefFirst
+      - typeSwitchVar
+      - typeUnparen
+      - underef
+      - unlabelStmt
+      - unlambda
+      - unnecessaryBlock
+      - unnecessaryDefer
+      - unslice
+      - valSwap
+      - weakCond
+      - yodaStyleExpr
+    
+    # 禁用特定的检查
+    disabled-checks:
+      - dupImport  # 由 goimports 处理
+      - ifElseChain
+    
+    # 设置下界
+    settings:
+      captLocal:
+        paramsOnly: true
+      rangeValCopy:
+        sizeThreshold: 32
+      HugeParam:
+        sizeThreshold: 80
+  
+  # gofmt 格式化
+  gofmt:
+    # 简化代码
+    simplify: true
+  
+  # goimports 导入管理
+  goimports:
+    # 本地包前缀
+    local-prefixes: minimind
+  
+  # gosec 安全检查
+  gosec:
+    # 排除的测试
+    excludes:
+      - G101
+      - G204
+      - G304
+      - G401
+      - G501
+    
+    # 包含的测试
+    includes:
+      - G401
+      - G501
+      - G101
+  
+  # govet 静态分析
+  govet:
+    # 启用所有分析器
+    check-shadowing: true
+    enable-all: true
+  
+  # 魔法数字检测
+  mnd:
+    # 忽略的模式
+    ignored-numbers:
+      - '0'
+      - '1'
+      - '2'
+      - '3'
+      - '4'
+      - '5'
+      - '10'
+      - '100'
+      - '1000'
+    
+    # 被忽略的文件
+    ignored-files:
+      - '.*_test\.go'
+    
+    # 忽略的功能
+    ignored-functions:
+      - 'make'
+      - 'len'
+      - 'append'
+      - 'time.Duration'
+      - 'time.Sleep'
+  
+  # 代码复杂度
+  cyclop:
+    # 最大圈复杂度
+    max-complexity: 15
+    # 忽略测试文件
+    skip-tests: true
+  
+  # 函数长度
+  funlen:
+    # 最大行数
+    lines: 60
+    # 最大语句数
+    statements: 40
+    # 忽略测试
+    ignore-comments: true
+  
+  # Gocognit 认知复杂度
+  gocognit:
+    # 最大认知复杂度
+    min-complexity: 20
+  
+  # 包导入检查
+  gci:
+    # 自定义部分
+    sections:
+      - standard
+      - default
+      - prefix(minimind)
+    
+    # 自定义分隔符
+    custom-order: true
+  
+  # 包注释检查
+  misspell:
+    # 使用美式拼写
+    locale: US
+  
+  # 行长检查
+  lll:
+    # 最大行长度
+    line-length: 120
+    # Tab宽度
+    tab-width: 4
+  
+  # 嵌套深度
+  nestif:
+    # 最大嵌套深度
+    min-complexity: 4
+  
+  # 重复代码检测
+  dupl:
+    # 最小token阈值
+    threshold: 100
+  
+  # 预分配
+  prealloc:
+    # 简单循环
+    simple: true
+    range-loops: true
+    for-loops: true
+
+# 启用的检测器
+linters:
+  # 是否启用所有检测器
+  enable-all: false
+  
+  # 启用的检测器列表
+  enable:
+    - bodyclose
+    - containedctx
+    - contextcheck
+    - cyclop
+    - deadcode
+    - decorder
+    - depguard
+    - dogsled
+    - dupl
+    - durationcheck
+    - errcheck
+    - errchkjson
+    - errorlint
+    - execinquery
+    - exhaustive
+    - forbidigo
+    - forcetypeassert
+    - funlen
+    - gci
+    - gocheckcompilerdirectives
+    - gochecknoglobals
+    - gochecknoinits
+    - gocognit
+    - goconst
+    - gocritic
+    - gocyclo
+    - godot
+    - godox
+    - goerr113
+    - gofmt
+    - gofumpt
+    - goheader
+    - goimports
+    - gomnd
+    - gomoddirectives
+    - gomodguard
+    - goprintffuncname
+    - gosec
+    - gosimple
+    - govet
+    - grouper
+    - ineffassign
+    - interfacebloat
+    - lll
+    - loggercheck
+    - maintidx
+    - makezero
+    - misspell
+    - nakedret
+    - nestif
+    - nilerr
+    - nilnil
+    - nlreturn
+    - noctx
+    - nolintlint
+    - nonamedreturns
+    - nosprintfhostport
+    - prealloc
+    - predeclared
+    - promlinter
+    - reassign
+    - revive
+    - staticcheck
+    - structcheck
+    - stylecheck
+    - tagliatelle
+    - tenv
+    - testpackage
+    - thelper
+    - tparallel
+    - typecheck
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - varcheck
+    - wastedassign
+    - whitespace
+    - wrapcheck
+    - wsl
+  
+  # 禁用的检测器
+  disable:
+    - exhaustruct  # 过于严格
+    - ireturn      # 与接口设计冲突
+    - varnamelen   # 与Go习惯冲突
+  
+  # 快速模式（只运行检测器子集）
+  fast: false
+
+# 问题配置
+issues:
+  # 最大问题数
+  max-issues-per-linter: 50
+  
+  # 最大同时问题数
+  max-same-issues: 3
+  
+  # 新问题只报告新增的问题
+  new: false
+  
+  # 忽略文件中已有的问题
+  fix: false
+  
+  # 排除模式
+  exclude:
+    - 'Error return value of .((os\\.)?std(out|err)\\..*|.*Close|.*Flush|os\\.Remove(All)?|.*printf?|os\\.(Un)?Setenv). is not checked'
+    - 'exported (type|method|function) (.+) should have comment or be unexported'
+    - 'ST1000: at least one file in a package should have a package comment'
+  
+  # 排除规则
+  exclude-rules:
+    # 测试文件排除特定规则
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - errcheck
+        - dupl
+        - gosec
+        - lll
+        - funlen
+        - goconst
+    
+    # 忽略vendor目录
+    - path: vendor/
+      linters:
+        - all
+    
+    # 生成的文件
+    - path: '.*\\.pb\\.go'
+      linters:
+        - all
+    
+    # 临时忽略某些文件的规则
+    - path: 'internal/api/server\.go'
+      linters:
+        - funlen
+    
+    # 允许全局变量在main函数中
+    - path: 'cmd/.*/main\.go'
+      linters:
+        - gochecknoglobals
+        - gochecknoinits
+  
+  # 包含规则
+  include:
+    - EXC0005
+  
+  # 默认排除模式
+  exclude-use-default: true
+
+# Severities配置
+severity:
+  # 默认严重级别
+  default-severity: error
+  
+  # 基于检测器的严重级别覆盖
+  rules:
+    - linters:
+        - dupl
+      severity: info
+    
+    - linters:
+        - gosec
+      severity: warning
+    
+    - linters:
+        - errcheck
+      severity: error
+
+# 自定义检测器集成
+linters-settings.custom:
+  # 这里可以添加自定义检测器
+
+# 缓存配置
+cache:
+  # 启用缓存
+  enable: true
+  
+  # 缓存目录
+  dir: ".golangci-cache"
