@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jingyaogong/gominimind/internal/cache"
-	"github.com/jingyaogong/gominimind/internal/model"
-	"github.com/jingyaogong/gominimind/pkg/config"
-	"github.com/jingyaogong/gominimind/pkg/logger"
-	"github.com/jingyaogong/gominimind/pkg/types"
+	"github.com/sirupsen/logrus"
+	"gominimind/internal/cache"
+	"gominimind/pkg/config"
+	"gominimind/pkg/model"
+	"gominimind/pkg/types"
 	"golang.org/x/time/rate"
 )
 
@@ -24,7 +24,7 @@ type Server struct {
 	Config     *config.Config
 	Model      *model.MiniMindModel
 	Cache      cache.Cache
-	Logger     *logger.Logger
+	Logger     *logrus.Logger
 	RateLimiter *sync.Map // IP地址 -> 限流器
 	Stats      *ServerStats
 	mu         sync.RWMutex
@@ -44,7 +44,7 @@ type ServerStats struct {
 
 // NewServer 创建新的API服务器
 func NewServer(cfg *config.Config, model *model.MiniMindModel) (*Server, error) {
-	logger := logger.GetLogger()
+	logger := logrus.New()
 	
 	// 初始化缓存
 	var cacheImpl cache.Cache

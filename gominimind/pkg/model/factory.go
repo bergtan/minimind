@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/jingyaogong/gominimind/pkg/types"
+	"gominimind/pkg/types"
+
 	"github.com/sirupsen/logrus"
 )
 
@@ -285,262 +286,30 @@ func (f *ModelFactoryImpl) setModelSpecificDefaults() {
 	}
 }
 
-// GetDefaultModelConfig 获取通用默认模型配置
-func GetDefaultModelConfig() *types.ModelConfig {
-	return &types.ModelConfig{
-		Name:                  "DefaultModel",
-		ModelType:             "transformer",
-		VocabSize:             32000,
-		HiddenSize:            768,
-		NumLayers:             12,
-		NumHeads:              12,
-		MaxPositionEmbeddings: 2048,
-		IntermediateSize:      3072,
-		HiddenAct:             "gelu",
-		InitializerRange:      0.02,
-		LayerNormEps:          1e-5,
-		UseCache:              true,
-		TorchDtype:            "float32",
-		AttentionBias:         false,
-		AttentionDropout:      0.1,
-		HiddenDropout:         0.1,
-	}
-}
+
 
 // ========== 模型创建器函数 ==========
 
-// NewMiniMindModel 创建MiniMind模型实例
-func NewMiniMindModel(config *types.ModelConfig) (Model, error) {
-	// 验证配置
-	if err := ValidateMiniMindConfig(config); err != nil {
-		return nil, err
-	}
 
-	model := &MiniMindModel{
-		config: config,
-		logger: logrus.New(),
-		status: ModelStatusCreated,
-	}
 
-	// 初始化模型组件
-	if err := model.initialize(); err != nil {
-		return nil, fmt.Errorf("failed to initialize MiniMind model: %w", err)
-	}
 
-	return model, nil
-}
-
-// NewLlamaModel 创建Llama模型实例
-func NewLlamaModel(config *types.ModelConfig) (Model, error) {
-	// 验证配置
-	if err := ValidateLlamaConfig(config); err != nil {
-		return nil, err
-	}
-
-	model := &LlamaModel{
-		config: config,
-		logger: logrus.New(),
-		status: ModelStatusCreated,
-	}
-
-	// 初始化模型组件
-	if err := model.initialize(); err != nil {
-		return nil, fmt.Errorf("failed to initialize Llama model: %w", err)
-	}
-
-	return model, nil
-}
-
-// NewBERTModel 创建BERT模型实例
-func NewBERTModel(config *types.ModelConfig) (Model, error) {
-	// 验证配置
-	if err := ValidateBERTConfig(config); err != nil {
-		return nil, err
-	}
-
-	model := &BERTModel{
-		config: config,
-		logger: logrus.New(),
-		status: ModelStatusCreated,
-	}
-
-	// 初始化模型组件
-	if err := model.initialize(); err != nil {
-		return nil, fmt.Errorf("failed to initialize BERT model: %w", err)
-	}
-
-	return model, nil
-}
-
-// NewGPTModel 创建GPT模型实例
-func NewGPTModel(config *types.ModelConfig) (Model, error) {
-	// 验证配置
-	if err := ValidateGPTConfig(config); err != nil {
-		return nil, err
-	}
-
-	model := &GPTModel{
-		config: config,
-		logger: logrus.New(),
-		status: ModelStatusCreated,
-	}
-
-	// 初始化模型组件
-	if err := model.initialize(); err != nil {
-		return nil, fmt.Errorf("failed to initialize GPT model: %w", err)
-	}
-
-	return model, nil
-}
 
 // ========== 配置验证函数 ==========
 
-// ValidateMiniMindConfig 验证MiniMind模型配置
-func ValidateMiniMindConfig(config *types.ModelConfig) error {
-	if config == nil {
-		return fmt.Errorf("config cannot be nil")
-	}
 
-	if config.VocabSize != 6400 {
-		return fmt.Errorf("MiniMind vocab size must be 6400")
-	}
-
-	if config.HiddenSize != 512 {
-		return fmt.Errorf("MiniMind hidden size must be 512")
-	}
-
-	if config.NumLayers != 8 {
-		return fmt.Errorf("MiniMind number of layers must be 8")
-	}
-
-	if config.NumHeads != 8 {
-		return fmt.Errorf("MiniMind number of heads must be 8")
-	}
-
-	if config.MaxPositionEmbeddings != 32768 {
-		return fmt.Errorf("MiniMind max position embeddings must be 32768")
-	}
-
-	if config.HiddenAct != "swiglu" {
-		return fmt.Errorf("MiniMind hidden activation must be swiglu")
-	}
-
-	return nil
-}
-
-// ValidateLlamaConfig 验证Llama模型配置
-func ValidateLlamaConfig(config *types.ModelConfig) error {
-	if config == nil {
-		return fmt.Errorf("config cannot be nil")
-	}
-
-	if config.HiddenAct != "silu" {
-		return fmt.Errorf("Llama hidden activation must be silu")
-	}
-
-	if config.RopeTheta == 0 {
-		return fmt.Errorf("Llama rope theta must be set")
-	}
-
-	return nil
-}
-
-// ValidateBERTConfig 验证BERT模型配置
-func ValidateBERTConfig(config *types.ModelConfig) error {
-	if config == nil {
-		return fmt.Errorf("config cannot be nil")
-	}
-
-	if config.LayerNormEps != 1e-12 {
-		return fmt.Errorf("BERT layer norm epsilon must be 1e-12")
-	}
-
-	if !config.AttentionBias {
-		return fmt.Errorf("BERT attention bias must be true")
-	}
-
-	return nil
-}
-
-// ValidateGPTConfig 验证GPT模型配置
-func ValidateGPTConfig(config *types.ModelConfig) error {
-	if config == nil {
-		return fmt.Errorf("config cannot be nil")
-	}
-
-	if config.HiddenAct != "gelu" {
-		return fmt.Errorf("GPT hidden activation must be gelu")
-	}
-
-	if !config.AttentionBias {
-		return fmt.Errorf("GPT attention bias must be true")
-	}
-
-	return nil
-}
 
 // ========== 工厂工具函数 ==========
 
-// CreateModelFromPath 从模型路径创建模型
-func CreateModelFromPath(modelPath string, factory ModelFactory) (Model, error) {
-	// 从路径推断模型类型
-	modelType := InferModelTypeFromPath(modelPath)
-	if modelType == "" {
-		return nil, fmt.Errorf("cannot infer model type from path: %s", modelPath)
-	}
 
-	// 创建模型配置
-	config := factory.GetDefaultConfig(modelType)
-	config.ModelPath = modelPath
 
-	// 创建模型实例
-	return factory.CreateModel(modelType, config)
-}
 
-// InferModelTypeFromPath 从模型路径推断模型类型
-func InferModelTypeFromPath(modelPath string) string {
-	// 根据路径中的关键词推断模型类型
-	if Contains(modelPath, "minimind") {
-		return "minimind"
-	} else if Contains(modelPath, "llama") {
-		return "llama"
-	} else if Contains(modelPath, "bert") {
-		return "bert"
-	} else if Contains(modelPath, "gpt") {
-		return "gpt"
-	}
-
-	// 尝试从配置文件推断
-	return ""
-}
 
 // Contains 检查字符串是否包含子字符串
-func Contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr ||
-		len(s) > len(substr) && (s[:len(substr)] == substr ||
-			Contains(s[1:], substr)))
-}
 
-// CreateModelWithAutoConfig 使用自动配置创建模型
-func CreateModelWithAutoConfig(modelType string, factory ModelFactory, autoConfig bool) (Model, error) {
-	var config *types.ModelConfig
 
-	if autoConfig {
-		// 自动配置：从预训练模型加载配置
-		config = LoadConfigFromPretrained(modelType)
-	} else {
-		config = factory.GetDefaultConfig(modelType)
-	}
 
-	return factory.CreateModel(modelType, config)
-}
 
-// LoadConfigFromPretrained 从预训练模型加载配置
-func LoadConfigFromPretrained(modelType string) *types.ModelConfig {
-	// 这里可以扩展为从HuggingFace Hub或其他模型仓库加载配置
-	// 目前返回默认配置
-	return GetDefaultModelConfig()
-}
+
 
 // ========== 工厂单例模式 ==========
 
@@ -549,19 +318,9 @@ var (
 	factoryOnce     sync.Once
 )
 
-// GetDefaultFactory 获取默认模型工厂（单例模式）
-func GetDefaultFactory() *ModelFactoryImpl {
-	factoryOnce.Do(func() {
-		factoryInstance = NewModelFactory()
-	})
-	return factoryInstance
-}
 
-// ResetFactory 重置工厂（主要用于测试）
-func ResetFactory() {
-	factoryInstance = nil
-	factoryOnce = sync.Once{}
-}
+
+
 
 // ========== 工厂扩展接口 ==========
 
@@ -583,13 +342,7 @@ type ExtendedModelFactory struct {
 	extensions []ModelFactoryExtension
 }
 
-// NewExtendedModelFactory 创建扩展模型工厂
-func NewExtendedModelFactory(extensions ...ModelFactoryExtension) *ExtendedModelFactory {
-	return &ExtendedModelFactory{
-		ModelFactoryImpl: NewModelFactory(),
-		extensions:       extensions,
-	}
-}
+
 
 // CreateModel 扩展创建模型方法
 func (f *ExtendedModelFactory) CreateModel(modelType string, config *types.ModelConfig) (Model, error) {

@@ -5,7 +5,8 @@ import (
 	"math"
 	"sync"
 
-	"github.com/jingyaogong/gominimind/pkg/types"
+	"gominimind/pkg/types"
+
 	"github.com/sirupsen/logrus"
 	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/mat"

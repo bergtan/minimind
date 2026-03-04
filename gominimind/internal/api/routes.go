@@ -10,9 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"gominimind/pkg/config"
+	"gominimind/pkg/types"
+
 	"github.com/gin-gonic/gin"
-	"github.com/jingyaogong/gominimind/pkg/config"
-	"github.com/jingyaogong/gominimind/pkg/types"
 )
 
 // RegisterRoutes 注册所有API路由

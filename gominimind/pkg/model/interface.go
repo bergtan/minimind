@@ -1,12 +1,10 @@
 package model
 
 import (
-	"crypto/sha256"
 	"errors"
-	"fmt"
 	"strings"
 
-	"github.com/jingyaogong/gominimind/pkg/types"
+	"gominimind/pkg/types"
 )
 
 // Model 模型接口定义
@@ -295,29 +293,7 @@ type Model interface {
 	SetLogCallback(callback func(level, message string))
 }
 
-// ModelFactory 模型工厂接口
-// 用于创建不同类型的模型实例
-type ModelFactory interface {
-	// CreateModel 创建模型实例
-	// modelType: 模型类型（minimind, llama, etc.）
-	// config: 模型配置
-	// 返回: 模型实例和错误信息
-	CreateModel(modelType string, config *types.ModelConfig) (Model, error)
 
-	// SupportedModels 获取支持的模型类型
-	// 返回: 支持的模型类型列表
-	SupportedModels() []string
-
-	// GetModelInfo 获取模型信息
-	// modelType: 模型类型
-	// 返回: 模型信息和错误信息
-	GetModelInfo(modelType string) (*types.ModelInfo, error)
-
-	// ValidateModelType 验证模型类型
-	// modelType: 模型类型
-	// 返回: 验证结果
-	ValidateModelType(modelType string) bool
-}
 
 // ModelManager 模型管理器接口
 // 用于管理多个模型实例
@@ -540,39 +516,7 @@ type ModelOptimizer interface {
 	ValidateOptimization(optimization types.OptimizationOptions) error
 }
 
-// AsyncResult 异步结果结构
-type AsyncResult struct {
-	Text      string
-	Error     error
-	Done      bool
-	RequestID string
-}
 
-// ModelHealth 模型健康状态结构
-type ModelHealth struct {
-	Status    string            `json:"status"`
-	Message   string            `json:"message"`
-	Timestamp string            `json:"timestamp"`
-	Checks    map[string]string `json:"checks"`
-}
-
-// ManagerHealth 管理器健康状态结构
-type ManagerHealth struct {
-	Status    string            `json:"status"`
-	Message   string            `json:"message"`
-	Timestamp string            `json:"timestamp"`
-	Models    map[string]string `json:"models"`
-}
-
-// ManagerStats 管理器统计信息结构
-type ManagerStats struct {
-	TotalModels     int     `json:"total_models"`
-	LoadedModels    int     `json:"loaded_models"`
-	MemoryUsage     float64 `json:"memory_usage_mb"`
-	TotalRequests   int64   `json:"total_requests"`
-	FailedRequests  int64   `json:"failed_requests"`
-	AvgResponseTime float64 `json:"avg_response_time_ms"`
-}
 
 // 常量定义
 const (
@@ -674,28 +618,9 @@ func ValidateMaxTokens(maxTokens int) error {
 	return nil
 }
 
-// GetDefaultModelConfig 获取默认模型配置
-func GetDefaultModelConfig() *types.ModelConfig {
-	return &types.ModelConfig{
-		Name:                  "minimind",
-		VocabSize:             6400,
-		HiddenSize:            512,
-		NumLayers:             8,
-		NumHeads:              8,
-		MaxPositionEmbeddings: 32768,
-		UseFlashAttention:     true,
-		UseCache:              true,
-		CacheSize:             1024,
-		Device:                "cpu",
-		MemoryLimit:           2048,
-	}
-}
 
-// CreateModelID 创建模型ID
-func CreateModelID(modelType, modelPath string) string {
-	hash := sha256.Sum256([]byte(modelType + "_" + modelPath))
-	return fmt.Sprintf("model_%x", hash[:8])
-}
+
+
 
 // GetModelTypeFromPath 从路径获取模型类型
 func GetModelTypeFromPath(path string) string {

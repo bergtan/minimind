@@ -9,7 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jingyaogong/gominimind/pkg/types"
+	"gominimind/pkg/types"
+
 	"gopkg.in/yaml.v3"
 )
 

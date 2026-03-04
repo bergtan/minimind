@@ -11,11 +11,15 @@ import (
 	"syscall"
 	"time"
 
+	"gominimind/internal/api"
+	"gominimind/pkg/config"
+	"gominimind/pkg/model"
+
 	"github.com/gin-gonic/gin"
-	"github.com/jingyaogong/gominimind/internal/api"
-	"github.com/jingyaogong/gominimind/internal/model"
-	"github.com/jingyaogong/gominimind/pkg/config"
-	"github.com/jingyaogong/gominimind/pkg/logger"
+	"github.com/sirupsen/logrus"
+
+	// 导入runtime包
+	"runtime"
 )
 
 var (
@@ -59,11 +63,11 @@ func main() {
 	}
 
 	// 初始化日志
-	if err := logger.Init(cfg.Logging); err != nil {
-		log.Fatalf("Failed to init logger: %v", err)
+	log := logrus.New()
+	log.SetLevel(logrus.InfoLevel)
+	if cfg.Logging.Level == "debug" {
+		log.SetLevel(logrus.DebugLevel)
 	}
-
-	log := logger.GetLogger()
 
 	// 显示启动信息
 	printStartupInfo(cfg, log)
@@ -273,7 +277,7 @@ func printVersion() {
 	fmt.Printf("Platform: %s/%s\n", runtime.GOOS, runtime.GOARCH)
 }
 
-func printStartupInfo(cfg *config.Config, log *logger.Logger) {
+func printStartupInfo(cfg *config.Config, log *logrus.Logger) {
 	log.Infof("=== %s v%s ===", AppName, AppVersion)
 	log.Infof("Server: %s:%d", cfg.Server.Host, cfg.Server.Port)
 	log.Infof("Model: %s", cfg.Model.Path)
@@ -294,5 +298,3 @@ func printStartupInfo(cfg *config.Config, log *logger.Logger) {
 	log.Info("=== Startup completed ===")
 }
 
-// 导入runtime包
-import "runtime"

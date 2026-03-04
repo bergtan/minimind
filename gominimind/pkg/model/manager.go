@@ -6,7 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jingyaogong/gominimind/pkg/types"
+	"gominimind/pkg/types"
+
 	"github.com/sirupsen/logrus"
 )
 

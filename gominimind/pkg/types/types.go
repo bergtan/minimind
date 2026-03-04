@@ -270,3 +270,112 @@ type PerformanceMetrics struct {
 	MemoryUsage    string  `json:"memory_usage"`
 	GPUUtilization float64 `json:"gpu_utilization"`
 }
+
+// ========== 模型相关类型定义 ==========
+
+// ModelConfig 模型配置结构
+type ModelConfig struct {
+	Name                  string  `json:"name"`
+	ModelType             string  `json:"model_type"`
+	VocabSize             int     `json:"vocab_size"`
+	HiddenSize            int     `json:"hidden_size"`
+	NumLayers             int     `json:"num_layers"`
+	NumHeads              int     `json:"num_heads"`
+	MaxPositionEmbeddings int     `json:"max_position_embeddings"`
+	IntermediateSize      int     `json:"intermediate_size"`
+	HiddenAct             string  `json:"hidden_act"`
+	InitializerRange      float64 `json:"initializer_range"`
+	LayerNormEps          float64 `json:"layer_norm_eps"`
+	UseCache              bool    `json:"use_cache"`
+	TorchDtype            string  `json:"torch_dtype"`
+	RopeTheta             float64 `json:"rope_theta"`
+	AttentionBias         bool    `json:"attention_bias"`
+	AttentionDropout      float64 `json:"attention_dropout"`
+	HiddenDropout         float64 `json:"hidden_dropout"`
+	ModelPath             string  `json:"model_path"`
+	CacheSize             int     `json:"cache_size"`
+	Device                string  `json:"device"`
+	MemoryLimit           int     `json:"memory_limit"`
+}
+
+// InferenceStats 推理统计信息
+type InferenceStats struct {
+	TotalRequests    int64   `json:"total_requests"`
+	SuccessfulRequests int64   `json:"successful_requests"`
+	FailedRequests   int64   `json:"failed_requests"`
+	AvgResponseTime  float64 `json:"avg_response_time"`
+	MaxResponseTime  float64 `json:"max_response_time"`
+	MinResponseTime  float64 `json:"min_response_time"`
+	TokensGenerated  int64   `json:"tokens_generated"`
+	TokensProcessed  int64   `json:"tokens_processed"`
+}
+
+// MemoryUsage 内存使用信息
+type MemoryUsage struct {
+	TotalMemory     int64   `json:"total_memory"`
+	UsedMemory      int64   `json:"used_memory"`
+	FreeMemory      int64   `json:"free_memory"`
+	MemoryUsageRate float64 `json:"memory_usage_rate"`
+	PeakMemoryUsage int64   `json:"peak_memory_usage"`
+}
+
+// CacheStats 缓存统计信息
+type CacheStats struct {
+	CacheHits       int64   `json:"cache_hits"`
+	CacheMisses     int64   `json:"cache_misses"`
+	CacheSize       int     `json:"cache_size"`
+	CacheUsage     int     `json:"cache_usage"`
+	HitRate        float64 `json:"hit_rate"`
+	Evictions       int64   `json:"evictions"`
+}
+
+// ModelStatus 模型状态
+type ModelStatus struct {
+	Status        string `json:"status"`
+	Message       string `json:"message"`
+	LastUsed      string `json:"last_used"`
+	LoadTime      string `json:"load_time"`
+	IsDefault     bool   `json:"is_default"`
+}
+
+// ModelHealth 模型健康状态
+type ModelHealth struct {
+	Status    string            `json:"status"`
+	Message   string            `json:"message"`
+	Timestamp string            `json:"timestamp"`
+	Checks    map[string]string `json:"checks"`
+}
+
+// ManagerHealth 管理器健康状态
+type ManagerHealth struct {
+	Status    string            `json:"status"`
+	Message   string            `json:"message"`
+	Timestamp string            `json:"timestamp"`
+	Models    map[string]string `json:"models"`
+}
+
+// ManagerStats 管理器统计信息
+type ManagerStats struct {
+	TotalModels     int     `json:"total_models"`
+	LoadedModels    int     `json:"loaded_models"`
+	MemoryUsage     float64 `json:"memory_usage_mb"`
+	TotalRequests   int64   `json:"total_requests"`
+	FailedRequests  int64   `json:"failed_requests"`
+	AvgResponseTime float64 `json:"avg_response_time_ms"`
+}
+
+// OptimizationOptions 优化选项
+type OptimizationOptions struct {
+	OptimizationType string `json:"optimization_type"`
+	TargetPlatform   string `json:"target_platform"`
+	Quantization     string `json:"quantization"`
+	Compression      string `json:"compression"`
+}
+
+// AsyncResult 异步结果结构
+type AsyncResult struct {
+	Text      string `json:"text"`
+	Error     error  `json:"error"`
+	Done      bool   `json:"done"`
+	RequestID string `json:"request_id"`
+}
