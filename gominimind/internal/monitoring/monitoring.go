@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -737,6 +738,3 @@ func (am *AlertManager) ClearAlert(alertType string) {
 	}).Info("Alert cleared")
 }
 
-// ========== 导入runtime包 ==========
-
-import "runtime"

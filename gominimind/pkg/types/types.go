@@ -129,13 +129,25 @@ type EmbeddingData struct {
 
 // ModelInfo 模型信息
 type ModelInfo struct {
-	ID                string   `json:"id"`
-	Name              string   `json:"name"`
-	Description       string   `json:"description"`
-	Version           string   `json:"version"`
-	ContextLength     int      `json:"context_length"`
-	Parameters        string   `json:"parameters"`
-	SupportedFeatures []string `json:"supported_features"`
+	ID                string        `json:"id"`
+	Name              string        `json:"name"`
+	Object            string        `json:"object"`
+	Created           int64         `json:"created"`
+	OwnedBy           string        `json:"owned_by"`
+	Permission        []interface{} `json:"permission"`
+	Root              string        `json:"root"`
+	Parent            *string       `json:"parent"`
+	Description       string        `json:"description"`
+	Version           string        `json:"version"`
+	ContextLength     int           `json:"context_length"`
+	Parameters        string        `json:"parameters"`
+	SupportedFeatures []string      `json:"supported_features"`
+}
+
+// ModelsListResponse 模型列表响应
+type ModelsListResponse struct {
+	Object string      `json:"object"`
+	Data   []ModelInfo `json:"data"`
 }
 
 // HealthResponse 健康检查响应
@@ -152,17 +164,11 @@ type HealthResponse struct {
 
 // ErrorResponse 错误响应
 type ErrorResponse struct {
-	Error ErrorDetail `json:"error"`
+	Error APIError `json:"error"`
 }
 
-// ErrorDetail 错误详情
-type ErrorDetail struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-	Type    string `json:"type"`
-	Param   string `json:"param,omitempty"`
-	Details string `json:"details,omitempty"`
-}
+// ErrorDetail 错误详情（ErrorResponse.Error字段的别名）
+type ErrorDetail = APIError
 
 // TrainingConfig 训练配置
 type TrainingConfig struct {
@@ -300,14 +306,14 @@ type ModelConfig struct {
 
 // InferenceStats 推理统计信息
 type InferenceStats struct {
-	TotalRequests    int64   `json:"total_requests"`
+	TotalRequests      int64   `json:"total_requests"`
 	SuccessfulRequests int64   `json:"successful_requests"`
-	FailedRequests   int64   `json:"failed_requests"`
-	AvgResponseTime  float64 `json:"avg_response_time"`
-	MaxResponseTime  float64 `json:"max_response_time"`
-	MinResponseTime  float64 `json:"min_response_time"`
-	TokensGenerated  int64   `json:"tokens_generated"`
-	TokensProcessed  int64   `json:"tokens_processed"`
+	FailedRequests     int64   `json:"failed_requests"`
+	AvgResponseTime    float64 `json:"avg_response_time"`
+	MaxResponseTime    float64 `json:"max_response_time"`
+	MinResponseTime    float64 `json:"min_response_time"`
+	TokensGenerated    int64   `json:"tokens_generated"`
+	TokensProcessed    int64   `json:"tokens_processed"`
 }
 
 // MemoryUsage 内存使用信息
@@ -321,21 +327,12 @@ type MemoryUsage struct {
 
 // CacheStats 缓存统计信息
 type CacheStats struct {
-	CacheHits       int64   `json:"cache_hits"`
-	CacheMisses     int64   `json:"cache_misses"`
-	CacheSize       int     `json:"cache_size"`
-	CacheUsage     int     `json:"cache_usage"`
-	HitRate        float64 `json:"hit_rate"`
-	Evictions       int64   `json:"evictions"`
-}
-
-// ModelStatus 模型状态
-type ModelStatus struct {
-	Status        string `json:"status"`
-	Message       string `json:"message"`
-	LastUsed      string `json:"last_used"`
-	LoadTime      string `json:"load_time"`
-	IsDefault     bool   `json:"is_default"`
+	CacheHits   int64   `json:"cache_hits"`
+	CacheMisses int64   `json:"cache_misses"`
+	CacheSize   int     `json:"cache_size"`
+	CacheUsage  int     `json:"cache_usage"`
+	HitRate     float64 `json:"hit_rate"`
+	Evictions   int64   `json:"evictions"`
 }
 
 // ModelHealth 模型健康状态
@@ -379,3 +376,173 @@ type AsyncResult struct {
 	Done      bool   `json:"done"`
 	RequestID string `json:"request_id"`
 }
+
+// ManagerConfig 管理器配置
+type ManagerConfig struct {
+	MaxModels         int      `json:"max_models"`
+	MemoryLimit       int64    `json:"memory_limit"`
+	AutoLoad          bool     `json:"auto_load"`
+	PreloadModels     []string `json:"preload_models"`
+	CacheSize         int      `json:"cache_size"`
+	WorkerPoolSize    int      `json:"worker_pool_size"`
+	HealthCheckPeriod int      `json:"health_check_period"`
+	LogLevel          string   `json:"log_level"`
+	ModelDir          string   `json:"model_dir"`
+	TempDir           string   `json:"temp_dir"`
+}
+
+// GenerationInput 生成输入结构
+type GenerationInput struct {
+	Prompt      string   `json:"prompt"`
+	MaxTokens   int      `json:"max_tokens"`
+	Temperature float64  `json:"temperature"`
+	TopP        float64  `json:"top_p"`
+	StopWords   []string `json:"stop_words"`
+	Stream      bool     `json:"stream"`
+	ModelID     string   `json:"model_id"`
+}
+
+// GenerationOutput 生成输出结构
+type GenerationOutput struct {
+	Text         string    `json:"text"`
+	Tokens       []int     `json:"tokens"`
+	LogProbs     []float64 `json:"log_probs"`
+	FinishReason string    `json:"finish_reason"`
+	Usage        *Usage    `json:"usage"`
+}
+
+// ChatCompletionInput 聊天补全输入结构
+type ChatCompletionInput struct {
+	Messages    []Message `json:"messages"`
+	MaxTokens   int       `json:"max_tokens"`
+	Temperature float64   `json:"temperature"`
+	TopP        float64   `json:"top_p"`
+	Stream      bool      `json:"stream"`
+	ModelID     string    `json:"model_id"`
+	Stop        []string  `json:"stop,omitempty"`
+}
+
+// ChatCompletionOutput 聊天补全输出结构
+type ChatCompletionOutput struct {
+	ID      string       `json:"id"`
+	Object  string       `json:"object"`
+	Created int64        `json:"created"`
+	Model   string       `json:"model"`
+	Choices []ChatChoice `json:"choices"`
+	Usage   *Usage       `json:"usage"`
+	ModelID string       `json:"model_id"`
+}
+
+// ModelStatus 模型状态信息结构
+type ModelStatus struct {
+	ModelID      string        `json:"model_id"`
+	Status       string        `json:"status"`
+	LoadTime     time.Time     `json:"load_time"`
+	LoadDuration time.Duration `json:"load_duration"`
+	MemoryUsage  uint64        `json:"memory_usage"`
+	LastUsed     time.Time     `json:"last_used"`
+}
+
+// EmbeddingInput 嵌入输入结构
+type EmbeddingInput struct {
+	Input     []string `json:"input"`
+	Texts     []string `json:"texts"`
+	Model     string   `json:"model"`
+	BatchSize int      `json:"batch_size"`
+	Normalize bool     `json:"normalize"`
+}
+
+// EmbeddingOutput 嵌入输出结构
+type EmbeddingOutput struct {
+	Object     string          `json:"object"`
+	Data       []EmbeddingData `json:"data"`
+	Embeddings [][]float64     `json:"embeddings"`
+	Dimensions int             `json:"dimensions"`
+	Model      string          `json:"model"`
+	Usage      *Usage          `json:"usage"`
+}
+
+// ModelStatusInfo 模型状态信息结构
+type ModelStatusInfo struct {
+	Status    string       `json:"status"`
+	IsLoaded  bool         `json:"is_loaded"`
+	ModelType string       `json:"model_type"`
+	ModelName string       `json:"model_name"`
+	Config    *ModelConfig `json:"config"`
+}
+
+// ChatMessage 聊天消息结构
+type ChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+	Name    string `json:"name,omitempty"`
+}
+
+// ChatChoice 聊天选择结构
+type ChatChoice struct {
+	Index        int         `json:"index"`
+	Message      ChatMessage `json:"message"`
+	FinishReason string      `json:"finish_reason"`
+}
+
+// ChatCompletionRequest 聊天补全请求（ChatRequest的别名，兼容OpenAI接口）
+type ChatCompletionRequest = ChatRequest
+
+// ChatCompletionResponse 聊天补全响应（ChatResponse的别名，兼容OpenAI接口）
+type ChatCompletionResponse = ChatResponse
+
+// BatchChatRequest 批量聊天请求
+type BatchChatRequest struct {
+	Requests []ChatRequest `json:"requests"`
+	Parallel int           `json:"parallel"`
+}
+
+// BatchChatResponse 批量聊天响应
+type BatchChatResponse struct {
+	Responses []ChatCompletionResponse `json:"responses"`
+	Errors    []error                  `json:"-"`
+}
+
+// BatchEmbeddingRequest 批量嵌入请求
+type BatchEmbeddingRequest struct {
+	Texts     []string `json:"texts"`
+	Model     string   `json:"model"`
+	Normalize bool     `json:"normalize"`
+}
+
+// APIError API错误详情（用于ErrorResponse）
+type APIError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Type    string `json:"type"`
+	Param   string `json:"param,omitempty"`
+	Details string `json:"details,omitempty"`
+}
+
+// ErrorResponse 错误响应结构（与上方ErrorResponse合并，此处为重复定义，已删除）
+
+// ========== 兼容性类型别名 ==========
+
+// ChatCompletionChoice 兼容OpenAI命名的Choice别名
+type ChatCompletionChoice = Choice
+
+// ChatCompletionUsage 兼容OpenAI命名的Usage别名
+type ChatCompletionUsage = Usage
+
+// ChatCompletionStreamResponse 流式响应（别名StreamChunk）
+type ChatCompletionStreamResponse = StreamChunk
+
+// ChatCompletionStreamChoice 流式选择（别名StreamChoice）
+type ChatCompletionStreamChoice = StreamChoice
+
+// ChatMessageDelta 消息增量（别名Delta）
+type ChatMessageDelta = Delta
+
+// CompletionUsage 补全用量别名
+type CompletionUsage = Usage
+
+// EmbeddingUsage 嵌入用量别名
+type EmbeddingUsage = Usage
+
+// OpenAIError API错误别名
+type OpenAIError = APIError

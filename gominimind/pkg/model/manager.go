@@ -106,7 +106,7 @@ func NewModelManager(config *types.ManagerConfig, factory ModelFactory) (*ModelM
 		logger:              logrus.New(),
 		ctx:                 ctx,
 		cancel:              cancel,
-		healthCheckInterval: time.Duration(config.HealthCheckInterval) * time.Second,
+		healthCheckInterval: time.Duration(config.HealthCheckPeriod) * time.Second,
 		resourceMonitor: &ResourceMonitor{
 			memoryUsage:        make(map[string]uint64),
 			gpuUsage:           make(map[string]float32),
@@ -176,7 +176,7 @@ func (m *ModelManagerImpl) LoadModel(modelID, modelType, modelPath string, confi
 	// 初始化模型状态
 	m.modelStatus[modelID] = &types.ModelStatus{
 		ModelID:      modelID,
-		Status:       ModelStatusLoaded,
+		Status:       "loaded",
 		LoadTime:     startTime,
 		LoadDuration: loadTime,
 		MemoryUsage:  0,
@@ -321,7 +321,7 @@ func (m *ModelManagerImpl) GetModelStatus(modelID string) (*types.ModelStatus, e
 	// 更新内存使用信息
 	if model, exists := m.models[modelID]; exists {
 		if memoryUsage, err := model.GetMemoryUsage(); err == nil {
-			status.MemoryUsage = memoryUsage.UsedMemory
+			status.MemoryUsage = uint64(memoryUsage.UsedMemory)
 		}
 	}
 
@@ -468,7 +468,7 @@ func (m *ModelManagerImpl) performHealthCheck() {
 		health, err := model.HealthCheck()
 		if err != nil {
 			m.logger.Warnf("Model %s health check failed: %v", modelID, err)
-			m.modelStatus[modelID].Status = ModelStatusError
+			m.modelStatus[modelID].Status = "error"
 		} else {
 			m.modelStatus[modelID].Status = health.Status
 		}
@@ -500,7 +500,7 @@ func (m *ModelManagerImpl) monitorResources() {
 	// 监控内存使用
 	for modelID, model := range m.models {
 		if memoryUsage, err := model.GetMemoryUsage(); err == nil {
-			m.resourceMonitor.memoryUsage[modelID] = memoryUsage.UsedMemory
+			m.resourceMonitor.memoryUsage[modelID] = uint64(memoryUsage.UsedMemory)
 		}
 	}
 
@@ -550,7 +550,7 @@ func (m *ModelManagerImpl) checkModelHealth(modelID string) {
 	health, err := model.HealthCheck()
 	if err != nil {
 		m.logger.Warnf("Model %s health check failed: %v", modelID, err)
-		m.updateModelStatus(modelID, ModelStatusError)
+		m.updateModelStatus(modelID, "error")
 	} else {
 		m.updateModelStatus(modelID, health.Status)
 	}
@@ -591,10 +591,10 @@ func (m *ModelManagerImpl) updateStats() {
 	totalMemory := uint64(0)
 	for _, model := range m.models {
 		if memoryUsage, err := model.GetMemoryUsage(); err == nil {
-			totalMemory += memoryUsage.UsedMemory
+			totalMemory += uint64(memoryUsage.UsedMemory)
 		}
 	}
-	m.stats.MemoryUsageMB = float64(totalMemory) / 1024 / 1024
+	m.stats.MemoryUsage = float64(totalMemory) / 1024 / 1024
 }
 
 // isResourceOverloaded 检查资源是否过载
@@ -604,18 +604,22 @@ func (m *ModelManagerImpl) isResourceOverloaded() bool {
 		totalMemory += usage
 	}
 
-	return totalMemory > m.config.MaxMemoryUsage
+	return totalMemory > uint64(m.config.MemoryLimit)
 }
 
 // getDefaultManagerConfig 获取默认管理器配置
 func getDefaultManagerConfig() *types.ManagerConfig {
 	return &types.ManagerConfig{
-		MaxModels:           10,
-		MaxMemoryUsage:      8 * 1024 * 1024 * 1024, // 8GB
-		HealthCheckInterval: 60,
-		LogLevel:            "info",
-		EnableMetrics:       true,
-		EnableTracing:       false,
+		MaxModels:        10,
+		MemoryLimit:      8 * 1024 * 1024 * 1024, // 8GB
+		HealthCheckPeriod: 60,
+		LogLevel:         "info",
+		AutoLoad:         true,
+		PreloadModels:    []string{},
+		CacheSize:        1000,
+		WorkerPoolSize:   4,
+		ModelDir:         "./models",
+		TempDir:          "./temp",
 	}
 }
 

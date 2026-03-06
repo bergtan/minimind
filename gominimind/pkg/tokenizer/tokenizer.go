@@ -390,7 +390,7 @@ func (t *MiniMindTokenizer) Decode(tokens []int) (string, error) {
 
 	var builder strings.Builder
 
-	for i, tokenID := range tokens {
+	for _, tokenID := range tokens {
 		token, exists := t.idToToken[tokenID]
 		if !exists {
 			// 处理未知token
@@ -661,4 +661,82 @@ func CreateMiniMindTokenizer(vocabPath string) (*MiniMindTokenizer, error) {
 // CreateDefaultTokenizer 创建默认分词器
 func CreateDefaultTokenizer() (*MiniMindTokenizer, error) {
 	return NewMiniMindTokenizer(DefaultTokenizerConfig())
+}
+
+// Load 从文件加载分词器
+func Load(path string) (*MiniMindTokenizer, error) {
+	config := DefaultTokenizerConfig()
+	config.VocabPath = path
+	return NewMiniMindTokenizer(config)
+}
+
+// NewWithBPE 创建基于BPE的分词器
+func NewWithBPE(vocab map[string]int, merges []string, vocabSize int, maxLength int) *MiniMindTokenizer {
+	config := DefaultTokenizerConfig()
+	if vocabSize > 0 {
+		config.VocabSize = vocabSize
+	}
+	if maxLength > 0 {
+		config.MaxLength = maxLength
+	}
+	tok, err := NewMiniMindTokenizer(config)
+	if err != nil {
+		// 回退到最简单的分词器
+		return &MiniMindTokenizer{
+			vocab:         make(map[string]int),
+			idToToken:     make(map[int]string),
+			specialTokens: make(map[string]int),
+			config:        config,
+			cache:         make(map[string][]int),
+			vocabSize:     config.VocabSize,
+		}
+	}
+	return tok
+}
+
+// VocabSize 返回词汇表大小
+func (t *MiniMindTokenizer) VocabSize() int {
+	return t.vocabSize
+}
+
+// PadID 返回填充token的ID
+func (t *MiniMindTokenizer) PadID() int {
+	if id, exists := t.specialTokens[t.config.PadToken]; exists {
+		return id
+	}
+	return 0
+}
+
+// EOSID 返回EOS token的ID
+func (t *MiniMindTokenizer) EOSID() int {
+	if id, exists := t.specialTokens[t.config.EOSToken]; exists {
+		return id
+	}
+	return 0
+}
+
+// BOSID 返回BOS token的ID
+func (t *MiniMindTokenizer) BOSID() int {
+	if id, exists := t.specialTokens[t.config.BOSToken]; exists {
+		return id
+	}
+	return 0
+}
+
+// EncodeSimple 简化编码（不返回error，直接返回token列表）
+func (t *MiniMindTokenizer) EncodeSimple(text string) []int {
+	tokens, err := t.Encode(text)
+	if err != nil {
+		return []int{}
+	}
+	return tokens
+}
+
+// DecodeSimple 简化解码（不返回error）
+func (t *MiniMindTokenizer) DecodeSimple(tokens []int) string {
+	text, err := t.Decode(tokens)
+	if err != nil {
+		return ""
+	}
+	return text
 }

@@ -101,8 +101,8 @@ type Model interface {
 	ResetStats()
 
 	// GetMemoryUsage 获取内存使用情况
-	// 返回: 内存使用信息
-	GetMemoryUsage() *types.MemoryUsage
+	// 返回: 内存使用信息和错误信息
+	GetMemoryUsage() (*types.MemoryUsage, error)
 
 	// ========== 模型管理方法 ==========
 
@@ -518,14 +518,19 @@ type ModelOptimizer interface {
 
 
 
+// 类型定义
+type ModelStatus string
+
 // 常量定义
 const (
 	// 模型状态
-	ModelStatusLoading  = "loading"
-	ModelStatusLoaded   = "loaded"
-	ModelStatusUnloaded = "unloaded"
-	ModelStatusError    = "error"
-	ModelStatusDisabled = "disabled"
+	ModelStatusCreated    ModelStatus = "created"
+	ModelStatusLoading    ModelStatus = "loading"
+	ModelStatusInitialized ModelStatus = "initialized"
+	ModelStatusLoaded     ModelStatus = "loaded"
+	ModelStatusUnloaded   ModelStatus = "unloaded"
+	ModelStatusError      ModelStatus = "error"
+	ModelStatusDisabled   ModelStatus = "disabled"
 
 	// 健康状态
 	HealthStatusHealthy   = "healthy"
@@ -585,12 +590,12 @@ var (
 // Helper functions
 
 // IsModelHealthy 检查模型是否健康
-func IsModelHealthy(health *ModelHealth) bool {
+func IsModelHealthy(health *types.ModelHealth) bool {
 	return health != nil && health.Status == HealthStatusHealthy
 }
 
 // IsManagerHealthy 检查管理器是否健康
-func IsManagerHealthy(health *ManagerHealth) bool {
+func IsManagerHealthy(health *types.ManagerHealth) bool {
 	return health != nil && health.Status == HealthStatusHealthy
 }
 

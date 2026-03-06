@@ -157,8 +157,8 @@ func (s *Server) ConfigInfo(c *gin.Context) {
 			"name":                    s.Config.Model.Name,
 			"vocab_size":              s.Config.Model.VocabSize,
 			"hidden_size":             s.Config.Model.HiddenSize,
-			"num_layers":              s.Config.Model.NumLayers,
-			"num_heads":               s.Config.Model.NumHeads,
+		"num_layers":              s.Config.Model.NumHiddenLayers,
+			"num_heads":               s.Config.Model.NumAttentionHeads,
 			"max_position_embeddings": s.Config.Model.MaxPositionEmbeddings,
 		},
 		"cache": gin.H{
@@ -177,7 +177,7 @@ func (s *Server) ConfigInfo(c *gin.Context) {
 // ReloadConfig 重载配置处理器
 func (s *Server) ReloadConfig(c *gin.Context) {
 	// 重新加载配置
-	newConfig, err := config.LoadConfig(s.Config.ConfigPath)
+	newConfig, err := config.LoadConfig(s.Config.Server.LogLevel)
 	if err != nil {
 		s.sendError(c, http.StatusInternalServerError, "config_error",
 			"Failed to reload config", err.Error())
@@ -205,7 +205,7 @@ func (s *Server) NotFound(c *gin.Context) {
 
 // StreamChatCompletion 流式聊天补全处理器
 func (s *Server) StreamChatCompletion(c *gin.Context) {
-	var req types.ChatCompletionRequest
+	var req types.ChatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		s.sendError(c, http.StatusBadRequest, "invalid_request_error", "Invalid JSON format", err.Error())
 		return
@@ -296,7 +296,7 @@ func (s *Server) createCompletionChunk(id, text, finishReason interface{}) []byt
 // ========== 批量处理辅助方法 ==========
 
 // BatchChatWorker 批量聊天工作器
-func (s *Server) BatchChatWorker(req types.ChatCompletionRequest, resultChan chan<- types.ChatCompletionResponse, errorChan chan<- error) {
+func (s *Server) BatchChatWorker(req types.ChatRequest, resultChan chan<- types.ChatResponse, errorChan chan<- error) {
 	response, err := s.generateChatResponse(&req)
 	if err != nil {
 		errorChan <- err
@@ -314,9 +314,13 @@ func (s *Server) BatchEmbeddingWorker(text string, index int, resultChan chan<- 
 		return
 	}
 
+	embeddingF64 := make([]float64, len(embedding))
+	for i, v := range embedding {
+		embeddingF64[i] = float64(v)
+	}
 	resultChan <- types.EmbeddingData{
 		Object:    "embedding",
-		Embedding: embedding,
+		Embedding: embeddingF64,
 		Index:     index,
 	}
 }
@@ -498,7 +502,7 @@ func (s *Server) getActiveRequests() int {
 
 // RegisterTestRoutes 注册测试路由（仅在开发模式下）
 func (s *Server) RegisterTestRoutes(router *gin.Engine) {
-	if s.Config.Server.Environment != "development" {
+	if s.Config.Server.LogLevel != "debug" {
 		return
 	}
 

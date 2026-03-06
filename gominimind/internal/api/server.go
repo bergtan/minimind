@@ -1,33 +1,32 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	"github.com/sirupsen/logrus"
 	"gominimind/internal/cache"
 	"gominimind/pkg/config"
 	"gominimind/pkg/model"
 	"gominimind/pkg/types"
+
+	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/time/rate"
 )
 
 // Server API服务器结构体
 type Server struct {
-	Config     *config.Config
-	Model      *model.MiniMindModel
-	Cache      cache.Cache
-	Logger     *logrus.Logger
+	Config      *config.Config
+	Model       *model.MiniMindModel
+	Cache       cache.Cache
+	Logger      *logrus.Logger
 	RateLimiter *sync.Map // IP地址 -> 限流器
-	Stats      *ServerStats
-	mu         sync.RWMutex
+	ServerStats *ServerStats
+	mu          sync.RWMutex
 }
 
 // ServerStats 服务器统计信息
@@ -45,13 +44,13 @@ type ServerStats struct {
 // NewServer 创建新的API服务器
 func NewServer(cfg *config.Config, model *model.MiniMindModel) (*Server, error) {
 	logger := logrus.New()
-	
+
 	// 初始化缓存
 	var cacheImpl cache.Cache
 	if cfg.Server.UseCache {
-		cacheImpl = cache.NewMemoryCache(cfg.Server.CacheSize, time.Duration(cfg.Cache.Expiration)*time.Second)
+		cacheImpl = cache.NewMemoryCache(int64(cfg.Server.CacheSize), time.Duration(cfg.Cache.Expiration)*time.Second, logger)
 	} else {
-		cacheImpl = cache.NewNoopCache()
+		cacheImpl = cache.NewMemoryCache(0, time.Minute, logger)
 	}
 
 	// 初始化统计信息
@@ -60,22 +59,62 @@ func NewServer(cfg *config.Config, model *model.MiniMindModel) (*Server, error) 
 	}
 
 	server := &Server{
-		Config:     cfg,
-		Model:      model,
-		Cache:      cacheImpl,
-		Logger:     logger,
+		Config:      cfg,
+		Model:       model,
+		Cache:       cacheImpl,
+		Logger:      logger,
 		RateLimiter: &sync.Map{},
-		Stats:      stats,
+		ServerStats: stats,
 	}
 
 	return server, nil
+}
+
+// SetupRouter 创建并配置路由器
+func (s *Server) SetupRouter() *gin.Engine {
+	router := gin.New()
+	router.Use(gin.Recovery())
+
+	// 健康检查（不需要认证）
+	router.GET("/health", s.HealthCheck)
+	router.GET("/health/detailed", s.DetailedHealthCheck)
+
+	// OpenAI兼容API
+	v1 := router.Group("/v1")
+	{
+		v1.Use(s.AuthMiddleware())
+		v1.Use(s.RateLimitMiddleware())
+		v1.POST("/chat/completions", s.ChatCompletion)
+		v1.POST("/completions", s.Completion)
+		v1.POST("/embeddings", s.Embedding)
+		v1.GET("/models", s.ListModels)
+		v1.GET("/models/:model", s.GetModel)
+	}
+
+	// 自定义API
+	api := router.Group("/api/v1")
+	{
+		api.Use(s.AuthMiddleware())
+		api.GET("/models", s.ListModels)
+		api.GET("/models/:model", s.GetModel)
+		api.GET("/model/info", s.GetModelInfo)
+		api.POST("/batch/chat", s.BatchChat)
+		api.POST("/batch/embedding", s.BatchEmbedding)
+	}
+
+	// 监控与文档
+	router.GET("/metrics", s.Metrics)
+	router.GET("/stats", s.Stats)
+	router.GET("/docs", s.Docs)
+
+	return router
 }
 
 // ========== OpenAI兼容接口 ==========
 
 // ChatCompletion 聊天补全接口
 func (s *Server) ChatCompletion(c *gin.Context) {
-	var req types.ChatCompletionRequest
+	var req types.ChatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		s.sendError(c, http.StatusBadRequest, "invalid_request_error", "Invalid JSON format", err.Error())
 		return
@@ -90,11 +129,11 @@ func (s *Server) ChatCompletion(c *gin.Context) {
 	// 检查缓存
 	cacheKey := s.generateCacheKey("chat", req)
 	if s.Config.Server.UseCache {
-		if cached, found := s.Cache.Get(cacheKey); found {
-			s.Stats.mu.Lock()
-			s.Stats.CacheHits++
-			s.Stats.mu.Unlock()
-			
+		if cached, err := s.Cache.Get(c.Request.Context(), cacheKey); err == nil && cached != nil {
+			s.ServerStats.mu.Lock()
+			s.ServerStats.CacheHits++
+			s.ServerStats.mu.Unlock()
+
 			c.JSON(http.StatusOK, cached)
 			return
 		}
@@ -117,10 +156,11 @@ func (s *Server) ChatCompletion(c *gin.Context) {
 
 	// 缓存结果
 	if s.Config.Server.UseCache {
-		s.Cache.Set(cacheKey, response, time.Hour)
-		s.Stats.mu.Lock()
-		s.Stats.CacheMisses++
-		s.Stats.mu.Unlock()
+		respBytes, _ := json.Marshal(response)
+		s.Cache.Set(c.Request.Context(), cacheKey, respBytes, time.Hour)
+		s.ServerStats.mu.Lock()
+		s.ServerStats.CacheMisses++
+		s.ServerStats.mu.Unlock()
 	}
 
 	// 更新统计信息
@@ -162,32 +202,40 @@ func (s *Server) Embedding(c *gin.Context) {
 	}
 
 	// 验证请求参数
-	if req.Input == "" {
+	if len(req.Input) == 0 {
 		s.sendError(c, http.StatusBadRequest, "invalid_request_error", "Missing required parameter", "input is required")
 		return
 	}
 
-	// 生成嵌入向量
-	embeddings, err := s.Model.GenerateEmbedding(req.Input)
+	// 生成嵌入向量（取第一个输入）
+	embeddingsF32, err := s.Model.GenerateEmbedding(req.Input[0])
 	if err != nil {
 		s.sendError(c, http.StatusInternalServerError, "internal_error", "Failed to generate embedding", err.Error())
 		return
 	}
+
+	// 转换为float64
+	embeddingsF64 := make([]float64, len(embeddingsF32))
+	for i, v := range embeddingsF32 {
+		embeddingsF64[i] = float64(v)
+	}
+
+	promptTokens, _ := s.Model.Tokenize(req.Input[0])
 
 	response := types.EmbeddingResponse{
 		Object: "list",
 		Data: []types.EmbeddingData{
 			{
 				Object:    "embedding",
-				Embedding: embeddings,
+				Embedding: embeddingsF64,
 				Index:     0,
 			},
 		},
 		Model: req.Model,
 		Usage: types.Usage{
-			PromptTokens:     s.Model.Tokenize(req.Input),
+			PromptTokens:     len(promptTokens),
 			CompletionTokens: 0,
-			TotalTokens:      s.Model.Tokenize(req.Input),
+			TotalTokens:      len(promptTokens),
 		},
 	}
 
@@ -198,13 +246,13 @@ func (s *Server) Embedding(c *gin.Context) {
 func (s *Server) ListModels(c *gin.Context) {
 	models := []types.ModelInfo{
 		{
-			ID:          "minimind",
-			Object:      "model",
-			Created:     time.Now().Unix(),
-			OwnedBy:     "gominimind",
-			Permission:  []interface{}{},
-			Root:        "minimind",
-			Parent:      nil,
+			ID:         "minimind",
+			Object:     "model",
+			Created:    time.Now().Unix(),
+			OwnedBy:    "gominimind",
+			Permission: []interface{}{},
+			Root:       "minimind",
+			Parent:     nil,
 		},
 	}
 
@@ -219,20 +267,20 @@ func (s *Server) ListModels(c *gin.Context) {
 // GetModel 获取模型详情
 func (s *Server) GetModel(c *gin.Context) {
 	modelID := c.Param("model_id")
-	
+
 	if modelID != "minimind" {
 		s.sendError(c, http.StatusNotFound, "model_not_found", "Model not found", fmt.Sprintf("Model %s not found", modelID))
 		return
 	}
 
 	modelInfo := types.ModelInfo{
-		ID:          "minimind",
-		Object:      "model",
-		Created:     time.Now().Unix(),
-		OwnedBy:     "gominimind",
-		Permission:  []interface{}{},
-		Root:        "minimind",
-		Parent:      nil,
+		ID:         "minimind",
+		Object:     "model",
+		Created:    time.Now().Unix(),
+		OwnedBy:    "gominimind",
+		Permission: []interface{}{},
+		Root:       "minimind",
+		Parent:     nil,
 	}
 
 	c.JSON(http.StatusOK, modelInfo)
@@ -243,9 +291,9 @@ func (s *Server) GetModel(c *gin.Context) {
 // HealthCheck 健康检查
 func (s *Server) HealthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"status":    "healthy",
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
-		"version":   "2.0.0",
+		"status":       "healthy",
+		"timestamp":    time.Now().UTC().Format(time.RFC3339),
+		"version":      "2.0.0",
 		"model_loaded": s.Model != nil,
 	})
 }
@@ -253,17 +301,17 @@ func (s *Server) HealthCheck(c *gin.Context) {
 // DetailedHealthCheck 详细健康检查
 func (s *Server) DetailedHealthCheck(c *gin.Context) {
 	stats := s.getStats()
-	
+
 	c.JSON(http.StatusOK, gin.H{
-		"status":          "healthy",
-		"timestamp":       time.Now().UTC().Format(time.RFC3339),
-		"version":         "2.0.0",
-		"model_loaded":     s.Model != nil,
-		"uptime":          time.Since(stats.StartTime).String(),
-		"total_requests":  stats.TotalRequests,
-		"failed_requests": stats.FailedRequests,
-		"cache_hits":      stats.CacheHits,
-		"cache_misses":    stats.CacheMisses,
+		"status":            "healthy",
+		"timestamp":         time.Now().UTC().Format(time.RFC3339),
+		"version":           "2.0.0",
+		"model_loaded":      s.Model != nil,
+		"uptime":            time.Since(stats.StartTime).String(),
+		"total_requests":    stats.TotalRequests,
+		"failed_requests":   stats.FailedRequests,
+		"cache_hits":        stats.CacheHits,
+		"cache_misses":      stats.CacheMisses,
 		"avg_response_time": stats.AvgResponseTime.String(),
 	})
 }
@@ -271,21 +319,21 @@ func (s *Server) DetailedHealthCheck(c *gin.Context) {
 // GetModelInfo 获取模型详细信息
 func (s *Server) GetModelInfo(c *gin.Context) {
 	modelID := c.Param("id")
-	
+
 	if modelID != "minimind" {
 		s.sendError(c, http.StatusNotFound, "model_not_found", "Model not found", fmt.Sprintf("Model %s not found", modelID))
 		return
 	}
 
 	modelInfo := gin.H{
-		"id":                "minimind",
-		"name":              "MiniMind",
-		"description":       "轻量级语言模型",
-		"version":           "2.0",
-		"context_length":    s.Config.Model.MaxPositionEmbeddings,
-		"parameters":       "25.8M",
+		"id":                 "minimind",
+		"name":               "MiniMind",
+		"description":        "轻量级语言模型",
+		"version":            "2.0",
+		"context_length":     s.Config.Model.MaxPositionEmbeddings,
+		"parameters":         "25.8M",
 		"supported_features": []string{"chat", "completion", "embedding"},
-		"config":           s.Config.Model,
+		"config":             s.Config.Model,
 	}
 
 	c.JSON(http.StatusOK, modelInfo)
@@ -314,18 +362,18 @@ func (s *Server) BatchChat(c *gin.Context) {
 	// 并行处理请求
 	results := make([]types.ChatCompletionResponse, len(req.Requests))
 	errors := make([]error, len(req.Requests))
-	
+
 	var wg sync.WaitGroup
 	semaphore := make(chan struct{}, req.Parallel)
-	
+
 	for i, chatReq := range req.Requests {
 		wg.Add(1)
 		semaphore <- struct{}{}
-		
+
 		go func(index int, request types.ChatCompletionRequest) {
 			defer wg.Done()
 			defer func() { <-semaphore }()
-			
+
 			response, err := s.generateChatResponse(&request)
 			if err != nil {
 				errors[index] = err
@@ -334,7 +382,7 @@ func (s *Server) BatchChat(c *gin.Context) {
 			}
 		}(i, chatReq)
 	}
-	
+
 	wg.Wait()
 
 	// 检查是否有错误
@@ -390,25 +438,25 @@ func (s *Server) BatchEmbedding(c *gin.Context) {
 // Metrics 监控指标
 func (s *Server) Metrics(c *gin.Context) {
 	stats := s.getStats()
-	
+
 	c.JSON(http.StatusOK, gin.H{
 		"metrics": gin.H{
-			"requests_total":          stats.TotalRequests,
-			"requests_failed":         stats.FailedRequests,
-			"cache_hits":              stats.CacheHits,
-			"cache_misses":            stats.CacheMisses,
-			"cache_hit_rate":          s.calculateHitRate(stats),
-			"avg_response_time_ms":    stats.AvgResponseTime.Milliseconds(),
+			"requests_total":         stats.TotalRequests,
+			"requests_failed":        stats.FailedRequests,
+			"cache_hits":             stats.CacheHits,
+			"cache_misses":           stats.CacheMisses,
+			"cache_hit_rate":         s.calculateHitRate(stats),
+			"avg_response_time_ms":   stats.AvgResponseTime.Milliseconds(),
 			"uptime_seconds":         time.Since(stats.StartTime).Seconds(),
 			"total_tokens_processed": stats.TotalTokens,
 		},
 	})
 }
 
-// Stats 统计信息
+// GetStats 获取统计信息
 func (s *Server) Stats(c *gin.Context) {
 	stats := s.getStats()
-	
+
 	c.JSON(http.StatusOK, gin.H{
 		"server": gin.H{
 			"start_time": stats.StartTime.Format(time.RFC3339),
@@ -416,9 +464,9 @@ func (s *Server) Stats(c *gin.Context) {
 			"version":    "2.0.0",
 		},
 		"requests": gin.H{
-			"total":   stats.TotalRequests,
-			"failed":  stats.FailedRequests,
-			"success": stats.TotalRequests - stats.FailedRequests,
+			"total":        stats.TotalRequests,
+			"failed":       stats.FailedRequests,
+			"success":      stats.TotalRequests - stats.FailedRequests,
 			"success_rate": s.calculateSuccessRate(stats),
 		},
 		"cache": gin.H{
@@ -441,24 +489,24 @@ func (s *Server) Docs(c *gin.Context) {
 		"description": "轻量级语言模型API服务",
 		"endpoints": gin.H{
 			"openai_compatible": gin.H{
-				"chat": "/v1/chat/completions",
+				"chat":       "/v1/chat/completions",
 				"completion": "/v1/completions",
-				"embedding": "/v1/embeddings",
-				"models": "/v1/models",
+				"embedding":  "/v1/embeddings",
+				"models":     "/v1/models",
 			},
 			"custom": gin.H{
-				"health": "/api/v1/health",
-				"batch_chat": "/api/v1/batch/chat",
+				"health":          "/api/v1/health",
+				"batch_chat":      "/api/v1/batch/chat",
 				"batch_embedding": "/api/v1/batch/embeddings",
-				"metrics": "/api/v1/metrics",
-				"stats": "/api/v1/stats",
+				"metrics":         "/api/v1/metrics",
+				"stats":           "/api/v1/stats",
 			},
 		},
 		"authentication": "Bearer Token authentication supported",
 		"rate_limiting":  "Rate limiting enabled",
 		"caching":        "Response caching enabled",
 	}
-	
+
 	c.JSON(http.StatusOK, docs)
 }
 
@@ -491,12 +539,12 @@ func (s *Server) CORSMiddleware() gin.HandlerFunc {
 		c.Header("Access-Control-Allow-Origin", "*")
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-		
+
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}
-		
+
 		c.Next()
 	}
 }
@@ -505,20 +553,20 @@ func (s *Server) CORSMiddleware() gin.HandlerFunc {
 func (s *Server) RateLimitMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		clientIP := c.ClientIP()
-		
+
 		// 获取或创建限流器
 		limiter, _ := s.RateLimiter.LoadOrStore(clientIP, rate.NewLimiter(
 			rate.Limit(s.Config.Server.RateLimit/60), // 转换为每秒
 			s.Config.Server.RateLimit/60,
 		))
-		
+
 		if !limiter.(*rate.Limiter).Allow() {
-			s.sendError(c, http.StatusTooManyRequests, "rate_limit_exceeded", 
+			s.sendError(c, http.StatusTooManyRequests, "rate_limit_exceeded",
 				"Rate limit exceeded", "Too many requests")
 			c.Abort()
 			return
 		}
-		
+
 		c.Next()
 	}
 }
@@ -530,19 +578,19 @@ func (s *Server) AuthMiddleware() gin.HandlerFunc {
 		if s.Config.Server.APIKey != "" {
 			authHeader := c.GetHeader("Authorization")
 			if authHeader == "" {
-				s.sendError(c, http.StatusUnauthorized, "authentication_error", 
+				s.sendError(c, http.StatusUnauthorized, "authentication_error",
 					"Missing API key", "Authorization header is required")
 				c.Abort()
 				return
 			}
-			
+
 			if !strings.HasPrefix(authHeader, "Bearer ") {
 				s.sendError(c, http.StatusUnauthorized, "authentication_error",
 					"Invalid API key format", "Bearer token required")
 				c.Abort()
 				return
 			}
-			
+
 			token := strings.TrimPrefix(authHeader, "Bearer ")
 			if token != s.Config.Server.APIKey {
 				s.sendError(c, http.StatusUnauthorized, "authentication_error",
@@ -551,7 +599,7 @@ func (s *Server) AuthMiddleware() gin.HandlerFunc {
 				return
 			}
 		}
-		
+
 		c.Next()
 	}
 }
@@ -560,10 +608,10 @@ func (s *Server) AuthMiddleware() gin.HandlerFunc {
 
 // sendError 发送错误响应
 func (s *Server) sendError(c *gin.Context, statusCode int, errorType, message, details string) {
-	s.Stats.mu.Lock()
-	s.Stats.FailedRequests++
-	s.Stats.mu.Unlock()
-	
+	s.ServerStats.mu.Lock()
+	s.ServerStats.FailedRequests++
+	s.ServerStats.mu.Unlock()
+
 	errorResponse := types.ErrorResponse{
 		Error: types.APIError{
 			Code:    statusCode,
@@ -573,28 +621,28 @@ func (s *Server) sendError(c *gin.Context, statusCode int, errorType, message, d
 			Details: details,
 		},
 	}
-	
+
 	c.JSON(statusCode, errorResponse)
 }
 
 // validateChatRequest 验证聊天请求
-func (s *Server) validateChatRequest(req *types.ChatCompletionRequest) error {
+func (s *Server) validateChatRequest(req *types.ChatRequest) error {
 	if len(req.Messages) == 0 {
 		return fmt.Errorf("messages array cannot be empty")
 	}
-	
+
 	if req.MaxTokens < 1 || req.MaxTokens > s.Config.Server.MaxTokens {
 		return fmt.Errorf("max_tokens must be between 1 and %d", s.Config.Server.MaxTokens)
 	}
-	
+
 	if req.Temperature < 0 || req.Temperature > 2 {
 		return fmt.Errorf("temperature must be between 0 and 2")
 	}
-	
+
 	if req.TopP < 0 || req.TopP > 1 {
 		return fmt.Errorf("top_p must be between 0 and 1")
 	}
-	
+
 	return nil
 }
 
@@ -606,31 +654,29 @@ func (s *Server) generateCacheKey(prefix string, req interface{}) string {
 
 // updateStats 更新统计信息
 func (s *Server) updateStats(responseTime time.Duration, tokens int) {
-	s.Stats.mu.Lock()
-	defer s.Stats.mu.Unlock()
-	
-	s.Stats.TotalRequests++
-	s.Stats.TotalTokens += int64(tokens)
-	
+	s.ServerStats.mu.Lock()
+	defer s.ServerStats.mu.Unlock()
+
+	s.ServerStats.TotalRequests++
+	s.ServerStats.TotalTokens += int64(tokens)
+
 	// 更新平均响应时间
-	if s.Stats.TotalRequests == 1 {
-		s.Stats.AvgResponseTime = responseTime
+	if s.ServerStats.TotalRequests == 1 {
+		s.ServerStats.AvgResponseTime = responseTime
 	} else {
-		s.Stats.AvgResponseTime = time.Duration(
-			(int64(s.Stats.AvgResponseTime)*s.Stats.TotalRequests + int64(responseTime)) / (s.Stats.TotalRequests + 1),
+		s.ServerStats.AvgResponseTime = time.Duration(
+			(int64(s.ServerStats.AvgResponseTime)*s.ServerStats.TotalRequests + int64(responseTime)) / (s.ServerStats.TotalRequests + 1),
 		)
 	}
 }
 
 // getStats 获取统计信息副本
-func (s *Server) getStats() ServerStats {
-	s.Stats.mu.RLock()
-	defer s.Stats.mu.RUnlock()
-	return *s.Stats
+func (s *Server) getStats() *ServerStats {
+	return s.ServerStats
 }
 
 // calculateHitRate 计算缓存命中率
-func (s *Server) calculateHitRate(stats ServerStats) float64 {
+func (s *Server) calculateHitRate(stats *ServerStats) float64 {
 	total := stats.CacheHits + stats.CacheMisses
 	if total == 0 {
 		return 0
@@ -639,7 +685,7 @@ func (s *Server) calculateHitRate(stats ServerStats) float64 {
 }
 
 // calculateSuccessRate 计算请求成功率
-func (s *Server) calculateSuccessRate(stats ServerStats) float64 {
+func (s *Server) calculateSuccessRate(stats *ServerStats) float64 {
 	if stats.TotalRequests == 0 {
 		return 0
 	}
@@ -647,7 +693,7 @@ func (s *Server) calculateSuccessRate(stats ServerStats) float64 {
 }
 
 // calculateTokensPerSecond 计算每秒处理token数
-func (s *Server) calculateTokensPerSecond(stats ServerStats) float64 {
+func (s *Server) calculateTokensPerSecond(stats *ServerStats) float64 {
 	uptime := time.Since(stats.StartTime).Seconds()
 	if uptime == 0 {
 		return 0
@@ -656,29 +702,29 @@ func (s *Server) calculateTokensPerSecond(stats ServerStats) float64 {
 }
 
 // generateChatResponse 生成聊天响应
-func (s *Server) generateChatResponse(req *types.ChatCompletionRequest) (*types.ChatCompletionResponse, error) {
+func (s *Server) generateChatResponse(req *types.ChatRequest) (*types.ChatResponse, error) {
 	// 构建提示文本
 	prompt := s.buildPrompt(req.Messages)
-	
+
 	// 生成文本
 	generatedText, err := s.Model.Generate(prompt, req.MaxTokens, req.Temperature, req.TopP)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// 计算token使用量
-	promptTokens := s.Model.Tokenize(prompt)
-	completionTokens := s.Model.Tokenize(generatedText)
-	
-	response := &types.ChatCompletionResponse{
+	promptTokens, _ := s.Model.Tokenize(prompt)
+	completionTokens, _ := s.Model.Tokenize(generatedText)
+
+	response := &types.ChatResponse{
 		ID:      fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano()),
 		Object:  "chat.completion",
 		Created: time.Now().Unix(),
 		Model:   req.Model,
-		Choices: []types.ChatCompletionChoice{
+		Choices: []types.Choice{
 			{
 				Index: 0,
-				Message: types.ChatMessage{
+				Message: types.Message{
 					Role:    "assistant",
 					Content: generatedText,
 				},
@@ -686,12 +732,12 @@ func (s *Server) generateChatResponse(req *types.ChatCompletionRequest) (*types.
 			},
 		},
 		Usage: types.Usage{
-			PromptTokens:     promptTokens,
-			CompletionTokens: completionTokens,
-			TotalTokens:      promptTokens + completionTokens,
+			PromptTokens:     len(promptTokens),
+			CompletionTokens: len(completionTokens),
+			TotalTokens:      len(promptTokens) + len(completionTokens),
 		},
 	}
-	
+
 	return response, nil
 }
 
@@ -701,10 +747,10 @@ func (s *Server) generateCompletionResponse(req *types.CompletionRequest) (*type
 	if err != nil {
 		return nil, err
 	}
-	
-	promptTokens := s.Model.Tokenize(req.Prompt)
-	completionTokens := s.Model.Tokenize(generatedText)
-	
+
+	promptTokens, _ := s.Model.Tokenize(req.Prompt)
+	completionTokens, _ := s.Model.Tokenize(generatedText)
+
 	response := &types.CompletionResponse{
 		ID:      fmt.Sprintf("cmpl-%d", time.Now().UnixNano()),
 		Object:  "text_completion",
@@ -719,19 +765,19 @@ func (s *Server) generateCompletionResponse(req *types.CompletionRequest) (*type
 			},
 		},
 		Usage: types.Usage{
-			PromptTokens:     promptTokens,
-			CompletionTokens: completionTokens,
-			TotalTokens:      promptTokens + completionTokens,
+			PromptTokens:     len(promptTokens),
+			CompletionTokens: len(completionTokens),
+			TotalTokens:      len(promptTokens) + len(completionTokens),
 		},
 	}
-	
+
 	return response, nil
 }
 
 // buildPrompt 构建提示文本
-func (s *Server) buildPrompt(messages []types.ChatMessage) string {
+func (s *Server) buildPrompt(messages []types.Message) string {
 	var prompt strings.Builder
-	
+
 	for _, msg := range messages {
 		switch msg.Role {
 		case "system":
@@ -748,64 +794,64 @@ func (s *Server) buildPrompt(messages []types.ChatMessage) string {
 			prompt.WriteString("<|end|>\n")
 		}
 	}
-	
+
 	prompt.WriteString("<|assistant|>\n")
 	return prompt.String()
 }
 
 // handleStreamingChat 处理流式聊天请求
-func (s *Server) handleStreamingChat(c *gin.Context, req *types.ChatCompletionRequest) {
+func (s *Server) handleStreamingChat(c *gin.Context, req *types.ChatRequest) {
 	// 设置流式响应头
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Access-Control-Allow-Headers", "Cache-Control")
-	
+
 	// 构建提示
 	prompt := s.buildPrompt(req.Messages)
-	
+
 	// 流式生成文本
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
-		s.sendError(c, http.StatusInternalServerError, "internal_error", 
+		s.sendError(c, http.StatusInternalServerError, "internal_error",
 			"Streaming not supported", "Response writer does not support streaming")
 		return
 	}
-	
+
 	chunkID := fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano())
-	
+
 	// 发送初始块
-	c.Writer.Write([]byte(fmt.Sprintf("data: %s\n\n", 
-		string(s.createStreamChunk(chunkID, "", "assistant", nil))))
+	c.Writer.Write([]byte(fmt.Sprintf("data: %s\n\n",
+		string(s.createStreamChunk(chunkID, "", "assistant", nil)))))
 	flusher.Flush()
-	
+
 	// 模拟流式生成（实际实现需要模型支持）
 	generatedText, err := s.Model.Generate(prompt, req.MaxTokens, req.Temperature, req.TopP)
 	if err != nil {
-		c.Writer.Write([]byte(fmt.Sprintf("data: %s\n\n", 
+		c.Writer.Write([]byte(fmt.Sprintf("data: %s\n\n",
 			string(s.createErrorChunk(err)))))
 		c.Writer.Write([]byte("data: [DONE]\n\n"))
 		flusher.Flush()
 		return
 	}
-	
+
 	// 分块发送响应
 	for i, char := range generatedText {
 		chunk := s.createStreamChunk(chunkID, string(char), "", nil)
 		c.Writer.Write([]byte(fmt.Sprintf("data: %s\n\n", string(chunk))))
 		flusher.Flush()
-		
+
 		// 添加小延迟以模拟流式效果
 		time.Sleep(50 * time.Millisecond)
-		
+
 		if i >= req.MaxTokens-1 {
 			break
 		}
 	}
-	
+
 	// 发送结束块
-	c.Writer.Write([]byte(fmt.Sprintf("data: %s\n\n", 
+	c.Writer.Write([]byte(fmt.Sprintf("data: %s\n\n",
 		string(s.createStreamChunk(chunkID, "", "", "stop")))))
 	c.Writer.Write([]byte("data: [DONE]\n\n"))
 	flusher.Flush()
@@ -829,7 +875,7 @@ func (s *Server) createStreamChunk(id, content, role, finishReason interface{}) 
 			},
 		},
 	}
-	
+
 	data, _ := json.Marshal(chunk)
 	return data
 }
@@ -842,7 +888,7 @@ func (s *Server) createErrorChunk(err error) []byte {
 			"type":    "internal_error",
 		},
 	}
-	
+
 	data, _ := json.Marshal(errorChunk)
 	return data
 }

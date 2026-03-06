@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -24,13 +25,13 @@ type ClientConfig struct {
 	MaxRetries int           `json:"max_retries"`
 	RetryDelay time.Duration `json:"retry_delay"`
 	UserAgent  string        `json:"user_agent"`
-	
+
 	// HTTP客户端配置
 	HTTPClient *http.Client `json:"-"`
-	
+
 	// 日志配置
-	Logger     *logrus.Logger `json:"-"`
-	LogLevel   string         `json:"log_level"`
+	Logger   *logrus.Logger `json:"-"`
+	LogLevel string         `json:"log_level"`
 }
 
 // DefaultConfig 默认配置
@@ -56,13 +57,13 @@ type MiniMindClient struct {
 	config     *ClientConfig
 	httpClient *http.Client
 	logger     *logrus.Logger
-	
+
 	// 服务客户端
-	Chat       *ChatClient
+	Chat        *ChatClient
 	Completions *CompletionsClient
-	Embeddings *EmbeddingsClient
-	Models     *ModelsClient
-	Files      *FilesClient
+	Embeddings  *EmbeddingsClient
+	Models      *ModelsClient
+	Files       *FilesClient
 }
 
 // NewMiniMindClient 创建新的MiniMind客户端
@@ -70,14 +71,25 @@ func NewMiniMindClient(config *ClientConfig) *MiniMindClient {
 	if config == nil {
 		config = DefaultConfig()
 	}
-	
+
+	// 设置默认值
+	if config.Timeout <= 0 {
+		config.Timeout = 30 * time.Second
+	}
+	if config.MaxRetries <= 0 {
+		config.MaxRetries = 3
+	}
+	if config.RetryDelay <= 0 {
+		config.RetryDelay = 1 * time.Second
+	}
+
 	// 初始化HTTP客户端
 	if config.HTTPClient == nil {
 		config.HTTPClient = &http.Client{
 			Timeout: config.Timeout,
 		}
 	}
-	
+
 	// 初始化日志记录器
 	logger := config.Logger
 	if logger == nil {
@@ -88,20 +100,20 @@ func NewMiniMindClient(config *ClientConfig) *MiniMindClient {
 		}
 		logger.SetLevel(level)
 	}
-	
+
 	client := &MiniMindClient{
 		config:     config,
 		httpClient: config.HTTPClient,
 		logger:     logger,
 	}
-	
+
 	// 初始化服务客户端
 	client.Chat = &ChatClient{client: client}
 	client.Completions = &CompletionsClient{client: client}
 	client.Embeddings = &EmbeddingsClient{client: client}
 	client.Models = &ModelsClient{client: client}
 	client.Files = &FilesClient{client: client}
-	
+
 	return client
 }
 
@@ -123,30 +135,38 @@ func (c *MiniMindClient) doRequest(ctx context.Context, method, path string, bod
 	} else {
 		retries = c.config.MaxRetries
 	}
-	
+
 	var lastErr error
-	
+
 	for i := 0; i <= retries; i++ {
 		resp, err := c.doSingleRequest(ctx, method, path, body, options)
 		if err == nil {
-			return resp, nil
+			// 检查HTTP响应状态码是否需要重试
+			if !c.shouldRetry(nil, resp, i) || i >= retries {
+				return resp, nil
+			}
+			// 需要重试，关闭当前响应体
+			if resp != nil && resp.Body != nil {
+				resp.Body.Close()
+			}
+			lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
+		} else {
+			lastErr = err
 		}
-		
-		lastErr = err
-		
+
 		// 检查是否应该重试
-		if !c.shouldRetry(err, resp, i) {
+		if err != nil && !c.shouldRetry(err, nil, i) {
 			break
 		}
-		
+
 		// 等待重试延迟
 		if i < retries {
 			delay := c.config.RetryDelay * time.Duration(i+1)
-			c.logger.Debugf("Request failed, retrying in %v: %v", delay, err)
+			c.logger.Debugf("Request failed, retrying in %v: %v", delay, lastErr)
 			time.Sleep(delay)
 		}
 	}
-	
+
 	return nil, lastErr
 }
 
@@ -157,7 +177,7 @@ func (c *MiniMindClient) doSingleRequest(ctx context.Context, method, path strin
 	if err != nil {
 		return nil, fmt.Errorf("invalid URL: %w", err)
 	}
-	
+
 	// 添加查询参数
 	if options != nil && options.Query != nil {
 		query := u.Query()
@@ -166,7 +186,7 @@ func (c *MiniMindClient) doSingleRequest(ctx context.Context, method, path strin
 		}
 		u.RawQuery = query.Encode()
 	}
-	
+
 	// 构建请求体
 	var reqBody io.Reader
 	if body != nil {
@@ -176,36 +196,36 @@ func (c *MiniMindClient) doSingleRequest(ctx context.Context, method, path strin
 		}
 		reqBody = bytes.NewBuffer(jsonData)
 	}
-	
+
 	// 创建请求
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	// 设置请求头
 	req.Header.Set("User-Agent", c.config.UserAgent)
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	if c.config.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.config.APIKey)
 	}
-	
+
 	// 添加自定义请求头
 	if options != nil && options.Headers != nil {
 		for key, value := range options.Headers {
 			req.Header.Set(key, value)
 		}
 	}
-	
+
 	// 执行请求
 	c.logger.Debugf("Making %s request to %s", method, u.String())
-	
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	
+
 	return resp, nil
 }
 
@@ -214,45 +234,45 @@ func (c *MiniMindClient) shouldRetry(err error, resp *http.Response, attempt int
 	if err != nil {
 		return true
 	}
-	
+
 	if resp == nil {
 		return false
 	}
-	
+
 	// 5xx状态码可以重试
 	if resp.StatusCode >= 500 && resp.StatusCode < 600 {
 		return true
 	}
-	
+
 	// 429状态码（限流）可以重试
 	if resp.StatusCode == 429 {
 		return true
 	}
-	
+
 	return false
 }
 
 // parseResponse 解析响应
 func (c *MiniMindClient) parseResponse(resp *http.Response, result interface{}) error {
 	defer resp.Body.Close()
-	
+
 	// 检查状态码
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return c.handleErrorResponse(resp)
 	}
-	
+
 	// 解析响应体
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
-	
+
 	if result != nil {
 		if err := json.Unmarshal(body, result); err != nil {
 			return fmt.Errorf("failed to unmarshal response: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -262,15 +282,15 @@ func (c *MiniMindClient) handleErrorResponse(resp *http.Response) error {
 	if err != nil {
 		return fmt.Errorf("failed to read error response: %w", err)
 	}
-	
+
 	var errorResp ErrorResponse
 	if err := json.Unmarshal(body, &errorResp); err == nil && errorResp.Error != nil {
 		return &APIError{
 			StatusCode: resp.StatusCode,
-			Error:      errorResp.Error,
+			Detail:     errorResp.Error,
 		}
 	}
-	
+
 	return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 }
 
@@ -292,12 +312,12 @@ type APIErrorDetail struct {
 // APIError API错误
 type APIError struct {
 	StatusCode int
-	Error      *APIErrorDetail
+	Detail     *APIErrorDetail
 }
 
 func (e *APIError) Error() string {
-	if e.Error != nil {
-		return fmt.Sprintf("API error %d: %s (%s)", e.StatusCode, e.Error.Message, e.Error.Code)
+	if e.Detail != nil {
+		return fmt.Sprintf("API error %d: %s (%s)", e.StatusCode, e.Detail.Message, e.Detail.Code)
 	}
 	return fmt.Sprintf("API error %d", e.StatusCode)
 }
@@ -311,17 +331,17 @@ type ChatClient struct {
 
 // ChatCompletionRequest 聊天补全请求
 type ChatCompletionRequest struct {
-	Model            string                  `json:"model"`
-	Messages         []ChatMessage           `json:"messages"`
-	MaxTokens        *int                    `json:"max_tokens,omitempty"`
-	Temperature      *float64                `json:"temperature,omitempty"`
-	TopP             *float64                `json:"top_p,omitempty"`
-	Stream           bool                    `json:"stream,omitempty"`
-	Stop             []string                `json:"stop,omitempty"`
-	PresencePenalty  *float64                `json:"presence_penalty,omitempty"`
-	FrequencyPenalty *float64                `json:"frequency_penalty,omitempty"`
-	LogitBias        map[string]float64      `json:"logit_bias,omitempty"`
-	User             string                  `json:"user,omitempty"`
+	Model            string             `json:"model"`
+	Messages         []ChatMessage      `json:"messages"`
+	MaxTokens        *int               `json:"max_tokens,omitempty"`
+	Temperature      *float64           `json:"temperature,omitempty"`
+	TopP             *float64           `json:"top_p,omitempty"`
+	Stream           bool               `json:"stream,omitempty"`
+	Stop             []string           `json:"stop,omitempty"`
+	PresencePenalty  *float64           `json:"presence_penalty,omitempty"`
+	FrequencyPenalty *float64           `json:"frequency_penalty,omitempty"`
+	LogitBias        map[string]float64 `json:"logit_bias,omitempty"`
+	User             string             `json:"user,omitempty"`
 }
 
 // ChatMessage 聊天消息
@@ -333,12 +353,12 @@ type ChatMessage struct {
 
 // ChatCompletionResponse 聊天补全响应
 type ChatCompletionResponse struct {
-	ID      string               `json:"id"`
-	Object  string               `json:"object"`
-	Created int64                `json:"created"`
-	Model   string               `json:"model"`
+	ID      string                 `json:"id"`
+	Object  string                 `json:"object"`
+	Created int64                  `json:"created"`
+	Model   string                 `json:"model"`
 	Choices []ChatCompletionChoice `json:"choices"`
-	Usage   Usage               `json:"usage"`
+	Usage   Usage                  `json:"usage"`
 }
 
 // ChatCompletionChoice 聊天补全选择
@@ -350,10 +370,10 @@ type ChatCompletionChoice struct {
 
 // ChatCompletionChunk 聊天补全流式响应块
 type ChatCompletionChunk struct {
-	ID      string               `json:"id"`
-	Object  string               `json:"object"`
-	Created int64                `json:"created"`
-	Model   string               `json:"model"`
+	ID      string                      `json:"id"`
+	Object  string                      `json:"object"`
+	Created int64                       `json:"created"`
+	Model   string                      `json:"model"`
 	Choices []ChatCompletionChunkChoice `json:"choices"`
 }
 
@@ -367,28 +387,28 @@ type ChatCompletionChunkChoice struct {
 // CreateCompletion 创建聊天补全
 func (cc *ChatClient) CreateCompletion(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
 	var resp ChatCompletionResponse
-	
+
 	httpResp, err := cc.client.doRequest(ctx, "POST", "/v1/chat/completions", req, nil)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if err := cc.client.parseResponse(httpResp, &resp); err != nil {
 		return nil, err
 	}
-	
+
 	return &resp, nil
 }
 
 // CreateCompletionStream 创建流式聊天补全
 func (cc *ChatClient) CreateCompletionStream(ctx context.Context, req ChatCompletionRequest) (*StreamReader, error) {
 	req.Stream = true
-	
+
 	httpResp, err := cc.client.doRequest(ctx, "POST", "/v1/chat/completions", req, nil)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return NewStreamReader(httpResp.Body), nil
 }
 
@@ -401,62 +421,62 @@ type CompletionsClient struct {
 
 // CompletionRequest 补全请求
 type CompletionRequest struct {
-	Model            string            `json:"model"`
-	Prompt           string            `json:"prompt"`
-	MaxTokens        *int              `json:"max_tokens,omitempty"`
-	Temperature      *float64          `json:"temperature,omitempty"`
-	TopP             *float64          `json:"top_p,omitempty"`
-	Stream           bool              `json:"stream,omitempty"`
-	Stop             []string          `json:"stop,omitempty"`
-	PresencePenalty  *float64          `json:"presence_penalty,omitempty"`
-	FrequencyPenalty *float64          `json:"frequency_penalty,omitempty"`
+	Model            string             `json:"model"`
+	Prompt           string             `json:"prompt"`
+	MaxTokens        *int               `json:"max_tokens,omitempty"`
+	Temperature      *float64           `json:"temperature,omitempty"`
+	TopP             *float64           `json:"top_p,omitempty"`
+	Stream           bool               `json:"stream,omitempty"`
+	Stop             []string           `json:"stop,omitempty"`
+	PresencePenalty  *float64           `json:"presence_penalty,omitempty"`
+	FrequencyPenalty *float64           `json:"frequency_penalty,omitempty"`
 	LogitBias        map[string]float64 `json:"logit_bias,omitempty"`
-	User             string            `json:"user,omitempty"`
+	User             string             `json:"user,omitempty"`
 }
 
 // CompletionResponse 补全响应
 type CompletionResponse struct {
-	ID      string            `json:"id"`
-	Object  string            `json:"object"`
-	Created int64             `json:"created"`
-	Model   string            `json:"model"`
+	ID      string             `json:"id"`
+	Object  string             `json:"object"`
+	Created int64              `json:"created"`
+	Model   string             `json:"model"`
 	Choices []CompletionChoice `json:"choices"`
-	Usage   Usage             `json:"usage"`
+	Usage   Usage              `json:"usage"`
 }
 
 // CompletionChoice 补全选择
 type CompletionChoice struct {
-	Text         string `json:"text"`
-	Index        int    `json:"index"`
+	Text         string      `json:"text"`
+	Index        int         `json:"index"`
 	Logprobs     interface{} `json:"logprobs"`
-	FinishReason string `json:"finish_reason"`
+	FinishReason string      `json:"finish_reason"`
 }
 
 // CreateCompletion 创建补全
 func (cc *CompletionsClient) CreateCompletion(ctx context.Context, req CompletionRequest) (*CompletionResponse, error) {
 	var resp CompletionResponse
-	
+
 	httpResp, err := cc.client.doRequest(ctx, "POST", "/v1/completions", req, nil)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if err := cc.client.parseResponse(httpResp, &resp); err != nil {
 		return nil, err
 	}
-	
+
 	return &resp, nil
 }
 
 // CreateCompletionStream 创建流式补全
 func (cc *CompletionsClient) CreateCompletionStream(ctx context.Context, req CompletionRequest) (*StreamReader, error) {
 	req.Stream = true
-	
+
 	httpResp, err := cc.client.doRequest(ctx, "POST", "/v1/completions", req, nil)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return NewStreamReader(httpResp.Body), nil
 }
 
@@ -476,10 +496,10 @@ type EmbeddingRequest struct {
 
 // EmbeddingResponse 嵌入响应
 type EmbeddingResponse struct {
-	Object string        `json:"object"`
+	Object string          `json:"object"`
 	Data   []EmbeddingData `json:"data"`
-	Model  string        `json:"model"`
-	Usage  Usage         `json:"usage"`
+	Model  string          `json:"model"`
+	Usage  Usage           `json:"usage"`
 }
 
 // EmbeddingData 嵌入数据
@@ -492,16 +512,16 @@ type EmbeddingData struct {
 // CreateEmbedding 创建嵌入
 func (ec *EmbeddingsClient) CreateEmbedding(ctx context.Context, req EmbeddingRequest) (*EmbeddingResponse, error) {
 	var resp EmbeddingResponse
-	
+
 	httpResp, err := ec.client.doRequest(ctx, "POST", "/v1/embeddings", req, nil)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if err := ec.client.parseResponse(httpResp, &resp); err != nil {
 		return nil, err
 	}
-	
+
 	return &resp, nil
 }
 
@@ -514,13 +534,13 @@ type ModelsClient struct {
 
 // ModelInfo 模型信息
 type ModelInfo struct {
-	ID               string   `json:"id"`
-	Object           string   `json:"object"`
-	Created          int64    `json:"created"`
-	OwnedBy          string   `json:"owned_by"`
-	Permissions      []string `json:"permissions"`
-	Root             string   `json:"root"`
-	Parent           string   `json:"parent"`
+	ID          string   `json:"id"`
+	Object      string   `json:"object"`
+	Created     int64    `json:"created"`
+	OwnedBy     string   `json:"owned_by"`
+	Permissions []string `json:"permissions"`
+	Root        string   `json:"root"`
+	Parent      string   `json:"parent"`
 }
 
 // ModelsListResponse 模型列表响应
@@ -532,32 +552,32 @@ type ModelsListResponse struct {
 // ListModels 列出模型
 func (mc *ModelsClient) ListModels(ctx context.Context) (*ModelsListResponse, error) {
 	var resp ModelsListResponse
-	
+
 	httpResp, err := mc.client.doRequest(ctx, "GET", "/v1/models", nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if err := mc.client.parseResponse(httpResp, &resp); err != nil {
 		return nil, err
 	}
-	
+
 	return &resp, nil
 }
 
 // RetrieveModel 获取模型详情
 func (mc *ModelsClient) RetrieveModel(ctx context.Context, modelID string) (*ModelInfo, error) {
 	var resp ModelInfo
-	
+
 	httpResp, err := mc.client.doRequest(ctx, "GET", "/v1/models/"+modelID, nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if err := mc.client.parseResponse(httpResp, &resp); err != nil {
 		return nil, err
 	}
-	
+
 	return &resp, nil
 }
 
@@ -587,16 +607,16 @@ type FilesListResponse struct {
 // ListFiles 列出文件
 func (fc *FilesClient) ListFiles(ctx context.Context) (*FilesListResponse, error) {
 	var resp FilesListResponse
-	
+
 	httpResp, err := fc.client.doRequest(ctx, "GET", "/v1/files", nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if err := fc.client.parseResponse(httpResp, &resp); err != nil {
 		return nil, err
 	}
-	
+
 	return &resp, nil
 }
 
@@ -604,16 +624,16 @@ func (fc *FilesClient) ListFiles(ctx context.Context) (*FilesListResponse, error
 
 // StreamReader 流式读取器
 type StreamReader struct {
-	reader   io.ReadCloser
-	decoder  *json.Decoder
-	scanner  *bufio.Scanner
+	reader  io.ReadCloser
+	decoder *json.Decoder
+	scanner *bufio.Scanner
 }
 
 // NewStreamReader 创建流式读取器
 func NewStreamReader(body io.ReadCloser) *StreamReader {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 1024), 1024*1024) // 1MB缓冲区
-	
+
 	return &StreamReader{
 		reader:  body,
 		scanner: scanner,
@@ -628,26 +648,26 @@ func (sr *StreamReader) ReadChunk() (*ChatCompletionChunk, error) {
 		}
 		return nil, io.EOF
 	}
-	
+
 	line := sr.scanner.Text()
-	
+
 	// 跳过空行和[DONE]标记
 	if line == "" || line == "data: [DONE]" {
 		return sr.ReadChunk()
 	}
-	
+
 	// 解析数据行
 	if strings.HasPrefix(line, "data: ") {
 		line = strings.TrimPrefix(line, "data: ")
-		
+
 		var chunk ChatCompletionChunk
 		if err := json.Unmarshal([]byte(line), &chunk); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal chunk: %w", err)
 		}
-		
+
 		return &chunk, nil
 	}
-	
+
 	return sr.ReadChunk()
 }
 
@@ -670,7 +690,7 @@ type Usage struct {
 // BatchRequest 批量请求
 type BatchRequest struct {
 	Requests []BatchRequestItem `json:"requests"`
-	Parallel int               `json:"parallel,omitempty"`
+	Parallel int                `json:"parallel,omitempty"`
 }
 
 // BatchRequestItem 批量请求项
@@ -687,16 +707,16 @@ type BatchResponse struct {
 // BatchChat 批量聊天
 func (cc *ChatClient) BatchChat(ctx context.Context, req BatchRequest) (*BatchResponse, error) {
 	var resp BatchResponse
-	
+
 	httpResp, err := cc.client.doRequest(ctx, "POST", "/api/v1/batch/chat", req, nil)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if err := cc.client.parseResponse(httpResp, &resp); err != nil {
 		return nil, err
 	}
-	
+
 	return &resp, nil
 }
 
@@ -714,16 +734,16 @@ type BatchEmbeddingResponse struct {
 // BatchEmbedding 批量嵌入
 func (ec *EmbeddingsClient) BatchEmbedding(ctx context.Context, req BatchEmbeddingRequest) (*BatchEmbeddingResponse, error) {
 	var resp BatchEmbeddingResponse
-	
+
 	httpResp, err := ec.client.doRequest(ctx, "POST", "/api/v1/batch/embeddings", req, nil)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if err := ec.client.parseResponse(httpResp, &resp); err != nil {
 		return nil, err
 	}
-	
+
 	return &resp, nil
 }
 
@@ -731,30 +751,212 @@ func (ec *EmbeddingsClient) BatchEmbedding(ctx context.Context, req BatchEmbeddi
 
 // HealthResponse 健康检查响应
 type HealthResponse struct {
-	Status      string `json:"status"`
-	Timestamp   string `json:"timestamp"`
-	Version     string `json:"version"`
-	ModelLoaded bool   `json:"model_loaded"`
-	GPUAvailable bool  `json:"gpu_available"`
+	Status         string `json:"status"`
+	Timestamp      string `json:"timestamp"`
+	Version        string `json:"version"`
+	ModelLoaded    bool   `json:"model_loaded"`
+	GPUAvailable   bool   `json:"gpu_available"`
 	GPUMemoryUsage string `json:"gpu_memory_usage"`
 }
 
 // Health 健康检查
 func (c *MiniMindClient) Health(ctx context.Context) (*HealthResponse, error) {
 	var resp HealthResponse
-	
+
 	httpResp, err := c.doRequest(ctx, "GET", "/health", nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if err := c.parseResponse(httpResp, &resp); err != nil {
 		return nil, err
 	}
-	
+
 	return &resp, nil
 }
 
-// ========== 导入bufio包 ==========
+// ========== 便捷方法 ==========
 
-import "bufio"
+// NewClient 创建客户端的兼容函数（返回值包含error以兼容旧测试）
+func NewClient(config *ClientConfig) (*MiniMindClient, error) {
+	return NewMiniMindClient(config), nil
+}
+
+// ChatCompletion 聊天补全的便捷方法
+func (c *MiniMindClient) ChatCompletion(req interface{}) (*ChatCompletionResponse, error) {
+	ctx := context.Background()
+	var chatReq ChatCompletionRequest
+
+	// 支持多种请求类型
+	switch r := req.(type) {
+	case *ChatCompletionRequest:
+		chatReq = *r
+	case ChatCompletionRequest:
+		chatReq = r
+	default:
+		// 尝试通过JSON转换
+		data, err := json.Marshal(req)
+		if err != nil {
+			return nil, fmt.Errorf("unsupported request type: %w", err)
+		}
+		if err := json.Unmarshal(data, &chatReq); err != nil {
+			return nil, fmt.Errorf("failed to convert request: %w", err)
+		}
+	}
+
+	return c.Chat.CreateCompletion(ctx, chatReq)
+}
+
+// ChatCompletionContext 带上下文的聊天补全便捷方法
+func (c *MiniMindClient) ChatCompletionContext(ctx context.Context, req interface{}) (*ChatCompletionResponse, error) {
+	var chatReq ChatCompletionRequest
+
+	switch r := req.(type) {
+	case *ChatCompletionRequest:
+		chatReq = *r
+	case ChatCompletionRequest:
+		chatReq = r
+	default:
+		data, err := json.Marshal(req)
+		if err != nil {
+			return nil, fmt.Errorf("unsupported request type: %w", err)
+		}
+		if err := json.Unmarshal(data, &chatReq); err != nil {
+			return nil, fmt.Errorf("failed to convert request: %w", err)
+		}
+	}
+
+	return c.Chat.CreateCompletion(ctx, chatReq)
+}
+
+// StreamResponse 流式响应
+type StreamResponse struct {
+	*ChatCompletionChunk
+	Error error
+}
+
+// StreamChatCompletion 流式聊天补全便捷方法
+func (c *MiniMindClient) StreamChatCompletion(req interface{}) (<-chan *StreamResponse, error) {
+	ctx := context.Background()
+	var chatReq ChatCompletionRequest
+
+	switch r := req.(type) {
+	case *ChatCompletionRequest:
+		chatReq = *r
+	case ChatCompletionRequest:
+		chatReq = r
+	default:
+		data, err := json.Marshal(req)
+		if err != nil {
+			return nil, fmt.Errorf("unsupported request type: %w", err)
+		}
+		if err := json.Unmarshal(data, &chatReq); err != nil {
+			return nil, fmt.Errorf("failed to convert request: %w", err)
+		}
+	}
+
+	reader, err := c.Chat.CreateCompletionStream(ctx, chatReq)
+	if err != nil {
+		return nil, err
+	}
+
+	ch := make(chan *StreamResponse, 100)
+	go func() {
+		defer close(ch)
+		defer reader.Close()
+		for {
+			chunk, err := reader.ReadChunk()
+			if err != nil {
+				if err.Error() != "EOF" && err != io.EOF {
+					ch <- &StreamResponse{Error: err}
+				}
+				return
+			}
+			ch <- &StreamResponse{ChatCompletionChunk: chunk}
+		}
+	}()
+
+	return ch, nil
+}
+
+// TextCompletion 文本补全便捷方法
+func (c *MiniMindClient) TextCompletion(req interface{}) (*CompletionResponse, error) {
+	ctx := context.Background()
+	var compReq CompletionRequest
+
+	switch r := req.(type) {
+	case *CompletionRequest:
+		compReq = *r
+	case CompletionRequest:
+		compReq = r
+	default:
+		data, err := json.Marshal(req)
+		if err != nil {
+			return nil, fmt.Errorf("unsupported request type: %w", err)
+		}
+		if err := json.Unmarshal(data, &compReq); err != nil {
+			return nil, fmt.Errorf("failed to convert request: %w", err)
+		}
+	}
+
+	return c.Completions.CreateCompletion(ctx, compReq)
+}
+
+// Embedding 嵌入生成便捷方法
+func (c *MiniMindClient) Embedding(req interface{}) (*EmbeddingResponse, error) {
+	ctx := context.Background()
+	var embReq EmbeddingRequest
+
+	switch r := req.(type) {
+	case *EmbeddingRequest:
+		embReq = *r
+	case EmbeddingRequest:
+		embReq = r
+	default:
+		data, err := json.Marshal(req)
+		if err != nil {
+			return nil, fmt.Errorf("unsupported request type: %w", err)
+		}
+		if err := json.Unmarshal(data, &embReq); err != nil {
+			return nil, fmt.Errorf("failed to convert request: %w", err)
+		}
+	}
+
+	return c.Embeddings.CreateEmbedding(ctx, embReq)
+}
+
+// BatchEmbedding 批量嵌入生成
+func (c *MiniMindClient) BatchEmbedding(inputs []string, modelName string) (*EmbeddingResponse, error) {
+	req := EmbeddingRequest{
+		Model: modelName,
+		Input: inputs,
+	}
+	return c.Embeddings.CreateEmbedding(context.Background(), req)
+}
+
+// CreateChatCompletion 简化版聊天补全（返回字符串内容）
+func (c *MiniMindClient) CreateChatCompletion(modelName, content string) (string, error) {
+	req := ChatCompletionRequest{
+		Model: modelName,
+		Messages: []ChatMessage{
+			{Role: "user", Content: content},
+		},
+	}
+
+	resp, err := c.Chat.CreateCompletion(context.Background(), req)
+	if err != nil {
+		return "", err
+	}
+
+	if len(resp.Choices) > 0 {
+		return resp.Choices[0].Message.Content, nil
+	}
+
+	return "", fmt.Errorf("no choices in response")
+}
+
+// Close 关闭客户端
+func (c *MiniMindClient) Close() error {
+	c.httpClient.CloseIdleConnections()
+	return nil
+}

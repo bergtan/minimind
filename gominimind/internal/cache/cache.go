@@ -124,7 +124,9 @@ func (mc *MemoryCache) Set(ctx context.Context, key string, value []byte, ttl ti
 
 	// 检查缓存大小限制
 	if mc.stats.Size+size > mc.maxSize {
-		mc.logger.Warn("Cache size limit exceeded, performing cleanup")
+		if mc.logger != nil {
+			mc.logger.Warn("Cache size limit exceeded, performing cleanup")
+		}
 		mc.performCleanup()
 
 		// 再次检查
@@ -197,7 +199,9 @@ func (mc *MemoryCache) Flush(ctx context.Context) error {
 	mc.data = make(map[string]*cacheItem)
 	mc.stats.Size = 0
 
-	mc.logger.Info("Memory cache flushed")
+	if mc.logger != nil {
+		mc.logger.Info("Memory cache flushed")
+	}
 
 	return nil
 }
@@ -216,7 +220,9 @@ func (mc *MemoryCache) Close() error {
 	defer mc.mutex.Unlock()
 
 	mc.data = nil
-	mc.logger.Info("Memory cache closed")
+	if mc.logger != nil {
+		mc.logger.Info("Memory cache closed")
+	}
 
 	return nil
 }
@@ -247,7 +253,7 @@ func (mc *MemoryCache) performCleanup() {
 		}
 	}
 
-	if cleaned > 0 {
+	if cleaned > 0 && mc.logger != nil {
 		mc.logger.Infof("Cleaned up %d expired cache items", cleaned)
 	}
 }

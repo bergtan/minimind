@@ -375,3 +375,48 @@ func (f *ExtendedModelFactory) CreateModel(modelType string, config *types.Model
 
 	return model, nil
 }
+
+// GetDefaultModelConfig 获取默认模型配置
+func GetDefaultModelConfig() *types.ModelConfig {
+	return &types.ModelConfig{
+		Name:                  "minimind",
+		ModelType:             "transformer",
+		VocabSize:             6400,
+		HiddenSize:            512,
+		NumLayers:             8,
+		NumHeads:              8,
+		MaxPositionEmbeddings: 32768,
+		IntermediateSize:      2048,
+		HiddenAct:             "swiglu",
+		InitializerRange:      0.02,
+		LayerNormEps:          1e-5,
+		UseCache:              true,
+		TorchDtype:            "float32",
+		RopeTheta:             10000.0,
+		AttentionBias:         false,
+		AttentionDropout:      0.0,
+		HiddenDropout:         0.0,
+		ModelPath:             "./MiniMind2",
+		CacheSize:             1000,
+		Device:                "cpu",
+		MemoryLimit:           1024 * 1024 * 1024, // 1GB
+	}
+}
+
+// NewLlamaModel 创建Llama模型实例
+func NewLlamaModel(config *types.ModelConfig) (Model, error) {
+	// 返回MiniMind模型作为占位符
+	return NewMiniMindModel(config)
+}
+
+// NewBERTModel 创建BERT模型实例
+func NewBERTModel(config *types.ModelConfig) (Model, error) {
+	// 返回MiniMind模型作为占位符
+	return NewMiniMindModel(config)
+}
+
+// NewGPTModel 创建GPT模型实例
+func NewGPTModel(config *types.ModelConfig) (Model, error) {
+	// 返回MiniMind模型作为占位符
+	return NewMiniMindModel(config)
+}

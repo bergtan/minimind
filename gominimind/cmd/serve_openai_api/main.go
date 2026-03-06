@@ -14,6 +14,7 @@ import (
 	"gominimind/internal/api"
 	"gominimind/pkg/config"
 	"gominimind/pkg/model"
+	"gominimind/pkg/types"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -74,15 +75,30 @@ func main() {
 
 	// 初始化模型
 	log.Info("Loading model...")
-	model, err := model.LoadModel(cfg.Model.Path, cfg.Model.ToTypesConfig())
+	modelCfg := &types.ModelConfig{
+		Name:                  cfg.Model.Name,
+		VocabSize:             cfg.Model.VocabSize,
+		HiddenSize:            cfg.Model.HiddenSize,
+		NumLayers:             cfg.Model.NumHiddenLayers,
+		NumHeads:              cfg.Model.NumAttentionHeads,
+		MaxPositionEmbeddings: cfg.Model.MaxPositionEmbeddings,
+		IntermediateSize:      cfg.Model.IntermediateSize,
+		HiddenAct:             cfg.Model.HiddenAct,
+		LayerNormEps:          cfg.Model.LayerNormEps,
+		InitializerRange:      cfg.Model.InitializerRange,
+	}
+	miniMindModel, err := model.NewMiniMindModel(modelCfg)
 	if err != nil {
-		log.Fatalf("Failed to load model: %v", err)
+		log.Fatalf("Failed to create model: %v", err)
+	}
+	if err := miniMindModel.LoadWeights(cfg.Model.Path); err != nil {
+		log.Warnf("Failed to load model weights from %s: %v (continuing with unloaded model)", cfg.Model.Path, err)
 	}
 	log.Info("Model loaded successfully")
 
 	// 初始化API服务器
 	log.Info("Initializing API server...")
-	server, err := api.NewServer(cfg, model)
+	server, err := api.NewServer(cfg, miniMindModel)
 	if err != nil {
 		log.Fatalf("Failed to create API server: %v", err)
 	}

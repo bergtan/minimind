@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -23,11 +24,11 @@ func TestAuthMiddleware(t *testing.T) {
 	router := setupTestRouter()
 
 	cfg := &AuthConfig{
-		APIKey:    "test-api-key",
-		APIKeyEnv: "TEST_API_KEY",
+		APIKey:      "test-api-key",
+		RequireAuth: true,
 	}
 
-	router.Use(AuthMiddleware(cfg))
+	router.Use(AuthMiddleware(cfg, logrus.New()))
 	router.GET("/test", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
@@ -73,11 +74,12 @@ func TestRateLimitMiddleware(t *testing.T) {
 	router := setupTestRouter()
 
 	cfg := &RateLimitConfig{
-		RequestsPerSecond: 2,
-		BurstSize:         2,
+		Requests: 2,
+		Burst:    2,
 	}
 
-	router.Use(RateLimitMiddleware(cfg))
+	limiter := NewRateLimiter(cfg, logrus.New())
+	router.Use(RateLimitMiddleware(limiter))
 	router.GET("/test", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
@@ -286,7 +288,7 @@ func TestRequestIDMiddleware(t *testing.T) {
 
 	router.Use(RequestIDMiddleware())
 	router.GET("/test", func(c *gin.Context) {
-		requestID := c.GetString("RequestID")
+		requestID := c.GetString("request_id")
 		c.JSON(200, gin.H{"request_id": requestID})
 	})
 
@@ -320,11 +322,15 @@ func BenchmarkRateLimitMiddleware(b *testing.B) {
 	router := setupTestRouter()
 
 	cfg := &RateLimitConfig{
-		RequestsPerSecond: 10000,
-		BurstSize:         10000,
+		Enabled:  true,
+		Requests: 10000,
+		Window:   time.Second,
+		Burst:    10000,
+		ByIP:     true,
 	}
 
-	router.Use(RateLimitMiddleware(cfg))
+	limiter := NewRateLimiter(cfg, logrus.New())
+	router.Use(RateLimitMiddleware(limiter))
 	router.GET("/test", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
@@ -347,7 +353,7 @@ func BenchmarkAuthMiddleware(b *testing.B) {
 		APIKey: "test-api-key",
 	}
 
-	router.Use(AuthMiddleware(cfg))
+	router.Use(AuthMiddleware(cfg, logrus.New()))
 	router.GET("/test", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})

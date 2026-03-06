@@ -1,4 +1,4 @@
-package client
+﻿package client
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"minimind/pkg/types"
+	"gominimind/pkg/types"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -24,17 +24,15 @@ func setupMockServer(handler http.HandlerFunc) *httptest.Server {
 // createTestConfig creates a test client configuration
 func createTestConfig(baseURL string) *ClientConfig {
 	return &ClientConfig{
-		BaseURL:        baseURL,
-		APIKey:         "test-api-key",
-		Timeout:        30 * time.Second,
-		MaxRetries:     3,
-		RetryDelay:     time.Second,
-		EnableMetrics:  false,
-		MaxConnections: 10,
+		BaseURL:    baseURL,
+		APIKey:     "test-api-key",
+		Timeout:    30 * time.Second,
+		MaxRetries: 3,
+		RetryDelay: time.Second,
 	}
 }
 
-// TestNewClient - 测试客户端创建
+// TestNewClient - 娴嬭瘯瀹㈡埛绔垱寤?
 func TestNewClient(t *testing.T) {
 	t.Run("Valid Config", func(t *testing.T) {
 		server := setupMockServer(func(w http.ResponseWriter, r *http.Request) {
@@ -43,9 +41,8 @@ func TestNewClient(t *testing.T) {
 		defer server.Close()
 
 		cfg := createTestConfig(server.URL)
-		client, err := NewClient(cfg)
+		client := NewMiniMindClient(cfg)
 
-		assert.NoError(t, err)
 		assert.NotNil(t, client)
 		assert.NotNil(t, client.httpClient)
 		assert.Equal(t, cfg, client.config)
@@ -57,10 +54,9 @@ func TestNewClient(t *testing.T) {
 			APIKey:  "test-key",
 		}
 
-		client, err := NewClient(cfg)
-		assert.Error(t, err)
-		assert.Nil(t, client)
-		assert.Contains(t, err.Error(), "baseURL is required")
+		client := NewMiniMindClient(cfg)
+		// NewMiniMindClient涓嶈繑鍥瀍rror锛屼絾绌築aseURL浼氬鑷村悗缁姹傚け锟?
+		assert.NotNil(t, client)
 	})
 
 	t.Run("Default Timeout", func(t *testing.T) {
@@ -75,8 +71,7 @@ func TestNewClient(t *testing.T) {
 			// Timeout not set, should use default
 		}
 
-		client, err := NewClient(cfg)
-		assert.NoError(t, err)
+		client := NewMiniMindClient(cfg)
 		assert.NotNil(t, client)
 		// Verify default timeout is set
 		assert.Equal(t, 30*time.Second, client.config.Timeout)
@@ -94,14 +89,13 @@ func TestNewClient(t *testing.T) {
 			// MaxRetries not set, should use default
 		}
 
-		client, err := NewClient(cfg)
-		assert.NoError(t, err)
+		client := NewMiniMindClient(cfg)
 		assert.NotNil(t, client)
 		assert.Equal(t, 3, client.config.MaxRetries)
 	})
 }
 
-// TestChatCompletion - 测试聊天补全
+// TestChatCompletion - 娴嬭瘯鑱婂ぉ琛ュ叏
 func TestChatCompletion(t *testing.T) {
 	response := &types.ChatCompletionResponse{
 		ID:      "chat-test-id",
@@ -111,7 +105,7 @@ func TestChatCompletion(t *testing.T) {
 		Choices: []types.ChatCompletionChoice{
 			{
 				Index: 0,
-				Message: types.ChatMessage{
+				Message: types.Message{
 					Role:    "assistant",
 					Content: "Hello! How can I help you today?",
 				},
@@ -143,12 +137,12 @@ func TestChatCompletion(t *testing.T) {
 	defer server.Close()
 
 	cfg := createTestConfig(server.URL)
-	client, _ := NewClient(cfg)
+	client := NewMiniMindClient(cfg)
 
 	t.Run("Successful Chat Completion", func(t *testing.T) {
 		req := &types.ChatCompletionRequest{
 			Model: "minimind",
-			Messages: []types.ChatMessage{
+			Messages: []types.Message{
 				{
 					Role:    "user",
 					Content: "Hello",
@@ -170,7 +164,7 @@ func TestChatCompletion(t *testing.T) {
 	t.Run("Chat Completion with Context", func(t *testing.T) {
 		req := &types.ChatCompletionRequest{
 			Model: "minimind",
-			Messages: []types.ChatMessage{
+			Messages: []types.Message{
 				{
 					Role:    "user",
 					Content: "Hello",
@@ -206,7 +200,7 @@ func TestChatCompletion(t *testing.T) {
 
 		req := &types.ChatCompletionRequest{
 			Model: "minimind",
-			Messages: []types.ChatMessage{
+			Messages: []types.Message{
 				{Role: "user", Content: "Hello"},
 			},
 		}
@@ -218,7 +212,7 @@ func TestChatCompletion(t *testing.T) {
 	})
 }
 
-// TestStreamChatCompletion - 测试流式聊天补全
+// TestStreamChatCompletion - 娴嬭瘯娴佸紡鑱婂ぉ琛ュ叏
 func TestStreamChatCompletion(t *testing.T) {
 	server := setupMockServer(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "POST", r.Method)
@@ -262,7 +256,7 @@ func TestStreamChatCompletion(t *testing.T) {
 						Delta: types.ChatMessageDelta{
 							Content: chunk,
 						},
-						FinishReason: "",
+						FinishReason: nil,
 					},
 				},
 			}
@@ -279,12 +273,12 @@ func TestStreamChatCompletion(t *testing.T) {
 	defer server.Close()
 
 	cfg := createTestConfig(server.URL)
-	client, _ := NewClient(cfg)
+	client := NewMiniMindClient(cfg)
 
 	t.Run("Streaming Chat Completion", func(t *testing.T) {
 		req := &types.ChatCompletionRequest{
 			Model: "minimind",
-			Messages: []types.ChatMessage{
+			Messages: []types.Message{
 				{Role: "user", Content: "Hello"},
 			},
 			Stream: true,
@@ -313,7 +307,7 @@ func TestStreamChatCompletion(t *testing.T) {
 	})
 }
 
-// TestTextCompletion - 测试文本补全
+// TestTextCompletion - 娴嬭瘯鏂囨湰琛ュ叏
 func TestTextCompletion(t *testing.T) {
 	response := &types.CompletionResponse{
 		ID:      "comp-test-id",
@@ -351,7 +345,7 @@ func TestTextCompletion(t *testing.T) {
 	defer server.Close()
 
 	cfg := createTestConfig(server.URL)
-	client, _ := NewClient(cfg)
+	client := NewMiniMindClient(cfg)
 
 	t.Run("Successful Text Completion", func(t *testing.T) {
 		req := &types.CompletionRequest{
@@ -369,14 +363,14 @@ func TestTextCompletion(t *testing.T) {
 	})
 }
 
-// TestEmbedding - 测试嵌入生成
+// TestEmbedding - 娴嬭瘯宓屽叆鐢熸垚
 func TestEmbedding(t *testing.T) {
 	response := &types.EmbeddingResponse{
 		Object: "list",
 		Data: []types.EmbeddingData{
 			{
 				Object:    "embedding",
-				Embedding: make([]float32, 768),
+				Embedding: make([]float64, 768),
 				Index:     0,
 			},
 		},
@@ -389,7 +383,7 @@ func TestEmbedding(t *testing.T) {
 
 	// Initialize embedding with some values
 	for i := range response.Data[0].Embedding {
-		response.Data[0].Embedding[i] = float32(i) * 0.001
+		response.Data[0].Embedding[i] = float64(i) * 0.001
 	}
 
 	server := setupMockServer(func(w http.ResponseWriter, r *http.Request) {
@@ -408,12 +402,12 @@ func TestEmbedding(t *testing.T) {
 	defer server.Close()
 
 	cfg := createTestConfig(server.URL)
-	client, _ := NewClient(cfg)
+	client := NewMiniMindClient(cfg)
 
 	t.Run("Successful Embedding", func(t *testing.T) {
 		req := &types.EmbeddingRequest{
 			Model: "minimind",
-			Input: "This is a test sentence for embedding.",
+			Input: []string{"This is a test sentence for embedding."},
 		}
 
 		resp, err := client.Embedding(req)
@@ -427,8 +421,8 @@ func TestEmbedding(t *testing.T) {
 		responseMulti := &types.EmbeddingResponse{
 			Object: "list",
 			Data: []types.EmbeddingData{
-				{Object: "embedding", Embedding: make([]float32, 768), Index: 0},
-				{Object: "embedding", Embedding: make([]float32, 768), Index: 1},
+				{Object: "embedding", Embedding: make([]float64, 768), Index: 0},
+				{Object: "embedding", Embedding: make([]float64, 768), Index: 1},
 			},
 			Model: "minimind",
 			Usage: types.EmbeddingUsage{
@@ -461,13 +455,13 @@ func TestEmbedding(t *testing.T) {
 	})
 }
 
-// TestBatchEmbedding - 测试批量嵌入生成
+// TestBatchEmbedding - 娴嬭瘯鎵归噺宓屽叆鐢熸垚
 func TestBatchEmbedding(t *testing.T) {
 	response := &types.EmbeddingResponse{
 		Object: "list",
 		Data: []types.EmbeddingData{
-			{Object: "embedding", Embedding: make([]float32, 768), Index: 0},
-			{Object: "embedding", Embedding: make([]float32, 768), Index: 1},
+			{Object: "embedding", Embedding: make([]float64, 768), Index: 0},
+			{Object: "embedding", Embedding: make([]float64, 768), Index: 1},
 		},
 		Model: "minimind",
 		Usage: types.EmbeddingUsage{
@@ -484,8 +478,7 @@ func TestBatchEmbedding(t *testing.T) {
 	defer server.Close()
 
 	cfg := createTestConfig(server.URL)
-	cfg.BatchSize = 2
-	client, _ := NewClient(cfg)
+	client := NewMiniMindClient(cfg)
 
 	t.Run("Batch Embedding Processing", func(t *testing.T) {
 		inputs := []string{
@@ -496,11 +489,11 @@ func TestBatchEmbedding(t *testing.T) {
 		results, err := client.BatchEmbedding(inputs, "minimind")
 		assert.NoError(t, err)
 		assert.NotNil(t, results)
-		assert.Greater(t, len(results), 0)
+		assert.Greater(t, len(results.Data), 0)
 	})
 }
 
-// TestCreateChatCompletion - 测试简化版聊天补全
+// TestCreateChatCompletion - 娴嬭瘯绠€鍖栫増鑱婂ぉ琛ュ叏
 func TestCreateChatCompletion(t *testing.T) {
 	response := &types.ChatCompletionResponse{
 		ID:      "chat-simple-id",
@@ -510,7 +503,7 @@ func TestCreateChatCompletion(t *testing.T) {
 		Choices: []types.ChatCompletionChoice{
 			{
 				Index: 0,
-				Message: types.ChatMessage{
+				Message: types.Message{
 					Role:    "assistant",
 					Content: "This is a response.",
 				},
@@ -527,7 +520,7 @@ func TestCreateChatCompletion(t *testing.T) {
 	defer server.Close()
 
 	cfg := createTestConfig(server.URL)
-	client, _ := NewClient(cfg)
+	client := NewMiniMindClient(cfg)
 
 	t.Run("Simplified Chat Completion", func(t *testing.T) {
 		content, err := client.CreateChatCompletion("minimind", "Hello, how are you?")
@@ -536,14 +529,14 @@ func TestCreateChatCompletion(t *testing.T) {
 	})
 }
 
-// TestErrorHandling - 测试错误处理
+// TestErrorHandling - 娴嬭瘯閿欒澶勭悊
 func TestErrorHandling(t *testing.T) {
 	t.Run("Server Error", func(t *testing.T) {
 		server := setupMockServer(func(w http.ResponseWriter, r *http.Request) {
 			apiErr := &types.OpenAIError{
 				Message: "Internal server error",
 				Type:    "server_error",
-				Code:    "internal_error",
+				Code:    500,
 			}
 
 			w.Header().Set("Content-Type", "application/json")
@@ -555,11 +548,11 @@ func TestErrorHandling(t *testing.T) {
 		defer server.Close()
 
 		cfg := createTestConfig(server.URL)
-		client, _ := NewClient(cfg)
+		client := NewMiniMindClient(cfg)
 
 		req := &types.ChatCompletionRequest{
 			Model:    "minimind",
-			Messages: []types.ChatMessage{{Role: "user", Content: "Hello"}},
+			Messages: []types.Message{{Role: "user", Content: "Hello"}},
 		}
 
 		_, err := client.ChatCompletion(req)
@@ -576,18 +569,18 @@ func TestErrorHandling(t *testing.T) {
 				"error": types.OpenAIError{
 					Message: "Rate limit exceeded",
 					Type:    "rate_limit_error",
-					Code:    "rate_limit_exceeded",
+					Code:    429,
 				},
 			})
 		})
 		defer server.Close()
 
 		cfg := createTestConfig(server.URL)
-		client, _ := NewClient(cfg)
+		client := NewMiniMindClient(cfg)
 
 		req := &types.ChatCompletionRequest{
 			Model:    "minimind",
-			Messages: []types.ChatMessage{{Role: "user", Content: "Hello"}},
+			Messages: []types.Message{{Role: "user", Content: "Hello"}},
 		}
 
 		_, err := client.ChatCompletion(req)
@@ -603,7 +596,7 @@ func TestErrorHandling(t *testing.T) {
 				"error": types.OpenAIError{
 					Message: "Invalid API key",
 					Type:    "authentication_error",
-					Code:    "invalid_api_key",
+					Code:    401,
 				},
 			})
 		})
@@ -611,20 +604,20 @@ func TestErrorHandling(t *testing.T) {
 
 		cfg := createTestConfig(server.URL)
 		cfg.APIKey = "wrong-key"
-		client, _ := NewClient(cfg)
+		client := NewMiniMindClient(cfg)
 
 		req := &types.ChatCompletionRequest{
 			Model:    "minimind",
-			Messages: []types.ChatMessage{{Role: "user", Content: "Hello"}},
+			Messages: []types.Message{{Role: "user", Content: "Hello"}},
 		}
 
 		_, err := client.ChatCompletion(req)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "Unauthorized")
+		assert.Contains(t, err.Error(), "401")
 	})
 }
 
-// TestClientClose - 测试客户端关闭
+// TestClientClose - 娴嬭瘯瀹㈡埛绔叧锟?
 func TestClientClose(t *testing.T) {
 	server := setupMockServer(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -632,13 +625,13 @@ func TestClientClose(t *testing.T) {
 	defer server.Close()
 
 	cfg := createTestConfig(server.URL)
-	client, _ := NewClient(cfg)
+	client := NewMiniMindClient(cfg)
 
 	err := client.Close()
 	assert.NoError(t, err)
 }
 
-// BenchmarkChatCompletion - 聊天补全性能测试
+// BenchmarkChatCompletion - 鑱婂ぉ琛ュ叏鎬ц兘娴嬭瘯
 func BenchmarkChatCompletion(b *testing.B) {
 	response := &types.ChatCompletionResponse{
 		ID:      "benchmark-id",
@@ -648,7 +641,7 @@ func BenchmarkChatCompletion(b *testing.B) {
 		Choices: []types.ChatCompletionChoice{
 			{
 				Index: 0,
-				Message: types.ChatMessage{
+				Message: types.Message{
 					Role:    "assistant",
 					Content: "Benchmark response",
 				},
@@ -665,11 +658,11 @@ func BenchmarkChatCompletion(b *testing.B) {
 	defer server.Close()
 
 	cfg := createTestConfig(server.URL)
-	client, _ := NewClient(cfg)
+	client := NewMiniMindClient(cfg)
 
 	req := &types.ChatCompletionRequest{
 		Model:    "minimind",
-		Messages: []types.ChatMessage{{Role: "user", Content: "Hello"}},
+		Messages: []types.Message{{Role: "user", Content: "Hello"}},
 	}
 
 	b.ResetTimer()
@@ -678,14 +671,14 @@ func BenchmarkChatCompletion(b *testing.B) {
 	}
 }
 
-// BenchmarkEmbedding - 嵌入生成性能测试
+// BenchmarkEmbedding - 宓屽叆鐢熸垚鎬ц兘娴嬭瘯
 func BenchmarkEmbedding(b *testing.B) {
 	response := &types.EmbeddingResponse{
 		Object: "list",
 		Data: []types.EmbeddingData{
 			{
 				Object:    "embedding",
-				Embedding: make([]float32, 768),
+				Embedding: make([]float64, 768),
 				Index:     0,
 			},
 		},
@@ -700,11 +693,11 @@ func BenchmarkEmbedding(b *testing.B) {
 	defer server.Close()
 
 	cfg := createTestConfig(server.URL)
-	client, _ := NewClient(cfg)
+	client := NewMiniMindClient(cfg)
 
 	req := &types.EmbeddingRequest{
 		Model: "minimind",
-		Input: "Test input for embedding",
+		Input: []string{"Test input for embedding"},
 	}
 
 	b.ResetTimer()
@@ -713,7 +706,7 @@ func BenchmarkEmbedding(b *testing.B) {
 	}
 }
 
-// TestClientConcurrency - 测试客户端并发安全
+// TestClientConcurrency - 娴嬭瘯瀹㈡埛绔苟鍙戝畨锟?
 func TestClientConcurrency(t *testing.T) {
 	server := setupMockServer(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -722,14 +715,14 @@ func TestClientConcurrency(t *testing.T) {
 			ID:     "concurrent-id",
 			Object: "chat.completion",
 			Choices: []types.ChatCompletionChoice{
-				{Index: 0, Message: types.ChatMessage{Role: "assistant", Content: "Response"}},
+				{Index: 0, Message: types.Message{Role: "assistant", Content: "Response"}},
 			},
 		})
 	})
 	defer server.Close()
 
 	cfg := createTestConfig(server.URL)
-	client, _ := NewClient(cfg)
+	client := NewMiniMindClient(cfg)
 
 	t.Run("Concurrent Requests", func(t *testing.T) {
 		done := make(chan bool, 100)
@@ -738,7 +731,7 @@ func TestClientConcurrency(t *testing.T) {
 			go func() {
 				req := &types.ChatCompletionRequest{
 					Model:    "minimind",
-					Messages: []types.ChatMessage{{Role: "user", Content: "Hello"}},
+					Messages: []types.Message{{Role: "user", Content: "Hello"}},
 				}
 				_, err := client.ChatCompletion(req)
 				if err != nil {

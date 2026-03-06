@@ -256,8 +256,8 @@ func RateLimitMiddleware(limiter *RateLimiter) gin.HandlerFunc {
 
 // ========== CORS中间件 ==========
 
-// CORSMiddleware CORS中间件
-func CORSMiddleware(config *AuthConfig) gin.HandlerFunc {
+// CORSMiddlewareFromAuth 基于AuthConfig的CORS中间件
+func CORSMiddlewareFromAuth(config *AuthConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 设置允许的源
 		if len(config.AllowedOrigins) > 0 {
@@ -503,8 +503,12 @@ func CompressionMiddleware() gin.HandlerFunc {
 // RequestIDMiddleware 请求ID中间件
 func RequestIDMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 生成请求ID
-		requestID := generateRequestID()
+		// 优先使用已有的请求ID
+		requestID := c.GetHeader("X-Request-ID")
+		if requestID == "" {
+			// 生成新请求ID
+			requestID = generateRequestID()
+		}
 
 		// 设置请求ID到上下文和响应头
 		c.Set("request_id", requestID)
@@ -626,7 +630,7 @@ func (mm *MiddlewareManager) SetupMiddlewares(router *gin.Engine) {
 	router.Use(CompressionMiddleware())
 
 	// CORS中间件
-	router.Use(CORSMiddleware(mm.AuthConfig))
+	router.Use(CORSMiddlewareFromAuth(mm.AuthConfig))
 
 	// 认证中间件
 	router.Use(AuthMiddleware(mm.AuthConfig, mm.Logger))
@@ -708,4 +712,265 @@ func (mm *MiddlewareManager) Cleanup() {
 	}
 
 	mm.Logger.Info("Middleware manager cleaned up")
+}
+
+// ========== CORS 中间件 ==========
+
+// CORSConfig CORS配置
+type CORSConfig struct {
+	AllowOrigins     []string `json:"allow_origins"`
+	AllowMethods     []string `json:"allow_methods"`
+	AllowHeaders     []string `json:"allow_headers"`
+	ExposeHeaders    []string `json:"expose_headers"`
+	AllowCredentials bool     `json:"allow_credentials"`
+	MaxAge           int      `json:"max_age"`
+}
+
+// CORSMiddleware 创建CORS中间件
+func CORSMiddleware(config *CORSConfig) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		origin := c.GetHeader("Origin")
+
+		// 检查是否允许的来源
+		allowed := false
+		for _, allowedOrigin := range config.AllowOrigins {
+			if allowedOrigin == "*" || allowedOrigin == origin {
+				allowed = true
+				break
+			}
+		}
+
+		if allowed {
+			c.Header("Access-Control-Allow-Origin", origin)
+		}
+
+		if config.AllowCredentials {
+			c.Header("Access-Control-Allow-Credentials", "true")
+		}
+
+		if len(config.AllowMethods) > 0 {
+			c.Header("Access-Control-Allow-Methods", strings.Join(config.AllowMethods, ", "))
+		}
+
+		if len(config.AllowHeaders) > 0 {
+			c.Header("Access-Control-Allow-Headers", strings.Join(config.AllowHeaders, ", "))
+		}
+
+		if len(config.ExposeHeaders) > 0 {
+			c.Header("Access-Control-Expose-Headers", strings.Join(config.ExposeHeaders, ", "))
+		}
+
+		if config.MaxAge > 0 {
+			c.Header("Access-Control-Max-Age", strconv.Itoa(config.MaxAge))
+		}
+
+		// 处理预检请求
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// ========== 错误处理中间件 ==========
+
+// ErrorResponse 错误响应结构
+type ErrorResponse struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// MiddlewareError 中间件错误
+type MiddlewareError struct {
+	StatusCode int
+	Code       string
+	Message    string
+}
+
+func (e *MiddlewareError) Error() string {
+	return e.Message
+}
+
+// InternalServerError 创建内部服务器错误
+func InternalServerError(message string) *MiddlewareError {
+	return &MiddlewareError{
+		StatusCode: http.StatusInternalServerError,
+		Code:       "internal_error",
+		Message:    message,
+	}
+}
+
+// ErrorHandlingMiddleware 错误处理中间件
+func ErrorHandlingMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		defer func() {
+			if err := recover(); err != nil {
+				c.JSON(http.StatusInternalServerError, ErrorResponse{
+					Code:    "internal_error",
+					Message: fmt.Sprintf("panic recovered: %v", err),
+				})
+				c.Abort()
+			}
+		}()
+
+		c.Next()
+
+		// 处理gin错误
+		if len(c.Errors) > 0 {
+			lastErr := c.Errors.Last()
+			if mErr, ok := lastErr.Err.(*MiddlewareError); ok {
+				c.JSON(mErr.StatusCode, ErrorResponse{
+					Code:    mErr.Code,
+					Message: mErr.Message,
+				})
+			} else {
+				c.JSON(http.StatusInternalServerError, ErrorResponse{
+					Code:    "internal_error",
+					Message: lastErr.Error(),
+				})
+			}
+		}
+	}
+}
+
+// ========== IP白名单中间件 ==========
+
+// IPWhitelistConfig IP白名单配置
+type IPWhitelistConfig struct {
+	Enabled    bool     `json:"enabled"`
+	AllowedIPs []string `json:"allowed_ips"`
+}
+
+// IPWhitelistMiddleware IP白名单中间件
+func IPWhitelistMiddleware(config *IPWhitelistConfig) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !config.Enabled {
+			c.Next()
+			return
+		}
+
+		clientIP := c.ClientIP()
+		allowed := false
+
+		for _, allowedIP := range config.AllowedIPs {
+			if allowedIP == clientIP || allowedIP == "*" {
+				allowed = true
+				break
+			}
+			// 简单CIDR匹配
+			if strings.Contains(allowedIP, "/") {
+				// 提取CIDR前缀
+				parts := strings.Split(allowedIP, "/")
+				if len(parts) == 2 {
+					prefix := parts[0]
+					prefixParts := strings.Split(prefix, ".")
+					clientParts := strings.Split(clientIP, ".")
+					if len(prefixParts) > 0 && len(clientParts) > 0 {
+						if prefixParts[0] == clientParts[0] {
+							allowed = true
+							break
+						}
+					}
+				}
+			}
+		}
+
+		if !allowed {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "IP address not allowed",
+				"code":  403,
+			})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// ========== 超时中间件 ==========
+
+// TimeoutMiddleware 超时中间件
+func TimeoutMiddleware(timeout time.Duration) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// 设置超时时间到上下文
+		c.Set("timeout", timeout)
+
+		done := make(chan struct{}, 1)
+
+		go func() {
+			c.Next()
+			done <- struct{}{}
+		}()
+
+		select {
+		case <-done:
+			// 正常完成
+		case <-time.After(timeout):
+			c.JSON(http.StatusGatewayTimeout, gin.H{
+				"error":   "Request timeout",
+				"code":    504,
+				"timeout": timeout.String(),
+			})
+			c.Abort()
+		}
+	}
+}
+
+// ========== 日志辅助函数 ==========
+
+// CreateStructuredLogger 创建结构化日志器
+func CreateStructuredLogger(level string) *logrus.Logger {
+	logger := logrus.New()
+	logger.SetFormatter(&logrus.JSONFormatter{})
+
+	switch strings.ToLower(level) {
+	case "debug":
+		logger.SetLevel(logrus.DebugLevel)
+	case "info":
+		logger.SetLevel(logrus.InfoLevel)
+	case "warn", "warning":
+		logger.SetLevel(logrus.WarnLevel)
+	case "error":
+		logger.SetLevel(logrus.ErrorLevel)
+	default:
+		logger.SetLevel(logrus.InfoLevel)
+	}
+
+	return logger
+}
+
+// GinLoggerMiddleware 基于logrus的Gin日志中间件
+func GinLoggerMiddleware(logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		startTime := time.Now()
+		path := c.Request.URL.Path
+
+		c.Next()
+
+		latency := time.Since(startTime)
+		statusCode := c.Writer.Status()
+
+		entry := logger.WithFields(logrus.Fields{
+			"status":    statusCode,
+			"latency":   latency.String(),
+			"method":    c.Request.Method,
+			"path":      path,
+			"client_ip": c.ClientIP(),
+		})
+
+		if requestID := c.GetHeader("X-Request-ID"); requestID != "" {
+			entry = entry.WithField("request_id", requestID)
+		}
+
+		if statusCode >= 500 {
+			entry.Error("Server error")
+		} else if statusCode >= 400 {
+			entry.Warn("Client error")
+		} else {
+			entry.Info("Request processed")
+		}
+	}
 }
