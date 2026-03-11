@@ -1,0 +1,1616 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MiniMind - GoMiniMind Web Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f8f9fa;
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* ========== 侧边栏 ========== */
+        .sidebar {
+            width: 300px;
+            min-width: 300px;
+            flex-shrink: 0;
+            background: #fff;
+            border-right: 1px solid #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            overflow-y: auto;
+            transition: width 0.3s ease, min-width 0.3s ease, padding 0.3s ease;
+        }
+
+        .sidebar.collapsed {
+            width: 0;
+            min-width: 0;
+            padding: 0;
+            overflow: hidden;
+            border-right: none;
+        }
+
+        .sidebar h3 {
+            font-size: 18px;
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .sidebar-section {
+            margin-bottom: 20px;
+        }
+
+        .sidebar-section label {
+            display: block;
+            font-size: 13px;
+            color: #555;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+
+        .sidebar-section input[type="range"] {
+            width: 100%;
+            margin-bottom: 4px;
+            accent-color: #ff4b4b;
+        }
+
+        .sidebar-section .range-value {
+            text-align: right;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .sidebar-section input[type="text"],
+        .sidebar-section input[type="password"],
+        .sidebar-section input[type="number"] {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .sidebar-section input[type="text"]:focus,
+        .sidebar-section input[type="password"]:focus,
+        .sidebar-section input[type="number"]:focus {
+            border-color: #ff4b4b;
+        }
+
+        .sidebar-section select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 13px;
+            outline: none;
+            background: #fff;
+            cursor: pointer;
+        }
+
+        .radio-group {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .radio-group label {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+            font-weight: 400;
+        }
+
+        .radio-group input[type="radio"] {
+            accent-color: #ff4b4b;
+        }
+
+        .btn-clear {
+            width: 100%;
+            padding: 10px;
+            background: #ff4b4b;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            margin-top: 10px;
+            transition: background 0.2s;
+        }
+
+        .btn-clear:hover {
+            background: #e03e3e;
+        }
+
+        /* ========== 主内容区 ========== */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* 顶部栏 */
+        .top-bar {
+            display: flex;
+            align-items: center;
+            padding: 8px 16px;
+            background: #fff;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .toggle-sidebar-btn {
+            background: none;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 6px 10px;
+            cursor: pointer;
+            font-size: 16px;
+            color: #666;
+            transition: all 0.2s;
+        }
+
+        .toggle-sidebar-btn:hover {
+            border-color: #999;
+            color: #333;
+            background: #f5f5f5;
+        }
+
+        /* Logo区域 */
+        .header {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: 16px 0 8px 0;
+            background: #fff;
+        }
+
+        .header .logo-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .header .logo-row img {
+            width: 45px;
+            height: 45px;
+        }
+
+        .header .logo-row span {
+            font-size: 26px;
+            font-weight: 900;
+            font-style: italic;
+            color: #333;
+        }
+
+        .header .subtitle {
+            color: #bbb;
+            font-style: italic;
+            margin-top: 6px;
+            margin-bottom: 10px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        /* 聊天区域 */
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 20%;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        @media (max-width: 1200px) {
+            .chat-container {
+                padding: 16px 10%;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .chat-container {
+                padding: 16px;
+            }
+
+            .sidebar {
+                position: fixed;
+                z-index: 100;
+                height: 100%;
+                box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            }
+        }
+
+        /* 用户消息 */
+        .message-user {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .message-user .bubble {
+            display: inline-block;
+            max-width: 70%;
+            padding: 8px 14px;
+            background-color: gray;
+            border-radius: 10px;
+            color: #fff;
+            font-size: 14px;
+            line-height: 1.6;
+            word-break: break-word;
+        }
+
+        /* 助手消息 */
+        .message-assistant {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .message-assistant .avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            margin-top: 4px;
+        }
+
+        .message-assistant .content-wrapper {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .message-assistant .bubble {
+            font-size: 14px;
+            line-height: 1.8;
+            color: #333;
+            word-break: break-word;
+        }
+
+        .message-assistant .bubble p {
+            margin: 4px 0;
+        }
+
+        .message-assistant .bubble pre {
+            background: #f4f4f4;
+            padding: 10px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 8px 0;
+        }
+
+        .message-assistant .bubble code {
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            font-size: 13px;
+        }
+
+        /* 删除按钮 */
+        .delete-btn {
+            all: unset;
+            box-sizing: border-box;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            min-width: 18px;
+            min-height: 18px;
+            max-width: 18px;
+            max-height: 18px;
+            padding: 0;
+            background-color: transparent;
+            border: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            color: #888;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-top: 4px;
+        }
+
+        .delete-btn:hover {
+            border-color: #999;
+            color: #333;
+            background-color: #f5f5f5;
+        }
+
+        /* 推理内容折叠 */
+        .think-block {
+            font-style: italic;
+            background: rgba(222, 222, 222, 0.5);
+            padding: 10px;
+            border-radius: 10px;
+            margin: 6px 0;
+        }
+
+        .think-block summary {
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        /* 输入区域 */
+        .input-area {
+            padding: 12px 20%;
+            background: #fff;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        @media (max-width: 1200px) {
+            .input-area {
+                padding: 12px 10%;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .input-area {
+                padding: 12px 16px;
+            }
+        }
+
+        .input-area form {
+            display: flex;
+            gap: 8px;
+        }
+
+        .input-area input[type="text"] {
+            flex: 1;
+            padding: 10px 16px;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .input-area input[type="text"]:focus {
+            border-color: #ff4b4b;
+        }
+
+        .input-area button[type="submit"] {
+            padding: 10px 20px;
+            background: #ff4b4b;
+            color: #fff;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.2s;
+            white-space: nowrap;
+        }
+
+        .input-area button[type="submit"]:hover {
+            background: #e03e3e;
+        }
+
+        .input-area button[type="submit"]:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        /* 加载动画 */
+        .typing-indicator {
+            display: inline-flex;
+            gap: 4px;
+            padding: 4px 0;
+        }
+
+        .typing-indicator span {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            background: #999;
+            border-radius: 50%;
+            animation: typing 1.4s infinite both;
+        }
+
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+            30% { transform: translateY(-4px); opacity: 1; }
+        }
+
+        /* ========== 标签页 ========== */
+        .tab-bar {
+            display: flex;
+            gap: 0;
+            background: #fff;
+            border-bottom: 2px solid #e0e0e0;
+            padding: 0 16px;
+        }
+
+        .tab-btn {
+            padding: 10px 22px;
+            border: none;
+            background: none;
+            font-size: 14px;
+            font-weight: 500;
+            color: #888;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+        }
+
+        .tab-btn.active {
+            color: #ff4b4b;
+            border-bottom-color: #ff4b4b;
+        }
+
+        .tab-btn:hover:not(.active) {
+            color: #555;
+        }
+
+        .tab-panel {
+            display: none;
+            flex: 1;
+            flex-direction: column;
+            min-height: 0;
+            overflow: hidden;
+            height: 0; /* 配合flex:1撑开 */
+        }
+
+        .tab-panel.active {
+            display: flex;
+            height: auto;
+        }
+
+        /* ========== 训练面板 ========== */
+        .train-panel {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 10%;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            min-height: 0;
+        }
+
+        @media (max-width: 900px) {
+            .train-panel { padding: 16px; }
+        }
+
+        .train-section {
+            background: #fff;
+            border: 1px solid #e8e8e8;
+            border-radius: 10px;
+            padding: 18px 20px;
+        }
+
+        .train-section h4 {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 14px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .train-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 12px;
+        }
+
+        .train-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .train-field label {
+            font-size: 12px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .train-field input[type="text"],
+        .train-field input[type="number"] {
+            padding: 7px 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .train-field input:focus {
+            border-color: #ff4b4b;
+        }
+
+        .train-field .field-hint {
+            font-size: 11px;
+            color: #aaa;
+        }
+
+        .train-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .btn-train-start {
+            padding: 10px 28px;
+            background: #ff4b4b;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        .btn-train-start:hover { background: #e03e3e; }
+        .btn-train-start:disabled { background: #ccc; cursor: not-allowed; }
+
+        .btn-train-stop {
+            padding: 10px 28px;
+            background: #fff;
+            color: #ff4b4b;
+            border: 1px solid #ff4b4b;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: none;
+        }
+
+        .btn-train-stop:hover { background: #fff5f5; }
+
+        .train-status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .train-status-badge.idle     { background: #f0f0f0; color: #888; }
+        .train-status-badge.running  { background: #fff3cd; color: #856404; }
+        .train-status-badge.finished { background: #d4edda; color: #155724; }
+        .train-status-badge.stopped  { background: #f8d7da; color: #721c24; }
+        .train-status-badge.error    { background: #f8d7da; color: #721c24; }
+
+        /* 训练日志 */
+        .train-log-box {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            font-family: "SFMono-Regular", Consolas, monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            padding: 14px;
+            border-radius: 8px;
+            height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .train-log-box .log-system  { color: #569cd6; }
+        .train-log-box .log-error   { color: #f44747; }
+        .train-log-box .log-normal  { color: #d4d4d4; }
+
+        .train-log-wrap {
+            position: relative;
+        }
+
+        .btn-copy-log {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            padding: 3px 10px;
+            font-size: 12px;
+            background: rgba(255,255,255,0.12);
+            color: #ccc;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+            z-index: 1;
+        }
+
+        .btn-copy-log:hover {
+            background: rgba(255,255,255,0.22);
+            color: #fff;
+        }
+
+        .btn-copy-log.copied {
+            background: #2d7a2d;
+            color: #fff;
+            border-color: #2d7a2d;
+        }
+
+        /* 训练类型选择卡片 */
+        .train-type-cards {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 4px;
+        }
+
+        .train-type-card {
+            flex: 1;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 14px 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+
+        .train-type-card:hover {
+            border-color: #ff4b4b;
+            background: #fff5f5;
+        }
+
+        .train-type-card.selected {
+            border-color: #ff4b4b;
+            background: #fff5f5;
+        }
+
+        .train-type-card .card-icon { font-size: 24px; margin-bottom: 6px; }
+        .train-type-card .card-title { font-size: 13px; font-weight: 600; color: #333; }
+        .train-type-card .card-desc  { font-size: 11px; color: #888; margin-top: 3px; }
+
+        /* 滚动条美化 */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #ccc;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #aaa;
+        }
+    </style>
+</head>
+<body>
+    <!-- 侧边栏 -->
+    <aside class="sidebar" id="sidebar">
+        <h3>模型设定调整</h3>
+
+        <!-- 历史对话轮数 -->
+        <div class="sidebar-section">
+            <label>Number of Historical Dialogues: <span id="historyValue">0</span></label>
+            <input type="range" id="historyNum" min="0" max="6" step="2" value="0">
+        </div>
+
+        <!-- 最大序列长度 -->
+        <div class="sidebar-section">
+            <label>Max Sequence Length: <span id="maxTokensValue">2048</span></label>
+            <input type="range" id="maxTokens" min="256" max="2048" step="1" value="2048">
+        </div>
+
+        <!-- 温度 -->
+        <div class="sidebar-section">
+            <label>Temperature: <span id="temperatureValue">0.85</span></label>
+            <input type="range" id="temperature" min="0.6" max="1.2" step="0.01" value="0.85">
+        </div>
+
+        <!-- 模型来源 -->
+        <div class="sidebar-section">
+            <label>选择模型来源</label>
+            <div class="radio-group">
+                <label>
+                    <input type="radio" name="modelSource" value="api" checked>
+                    API
+                </label>
+                <label>
+                    <input type="radio" name="modelSource" value="local" disabled>
+                    本地模型 (Go版暂不支持)
+                </label>
+            </div>
+        </div>
+
+        <!-- API设置区域 -->
+        <div id="apiSettings">
+            <div class="sidebar-section">
+                <label>API URL</label>
+                <input type="text" id="apiUrl" value="http://127.0.0.1:8000/v1">
+            </div>
+            <div class="sidebar-section">
+                <label>训练服务 URL</label>
+<input type="text" id="trainUrl" value="" placeholder="留空则使用当前服务地址">
+            </div>
+            <div class="sidebar-section">
+                <label>Model ID</label>
+                <input type="text" id="apiModelId" value="minimind">
+            </div>
+            <div class="sidebar-section">
+                <label>Model Name</label>
+                <input type="text" id="apiModelName" value="MiniMind2">
+            </div>
+            <div class="sidebar-section">
+                <label>API Key</label>
+                <input type="password" id="apiKey" value="none">
+            </div>
+        </div>
+
+        <!-- 清除对话 -->
+        <button class="btn-clear" onclick="clearChat()">🗑 清除对话</button>
+    </aside>
+
+    <!-- 主内容 -->
+    <div class="main-content">
+        <!-- 顶部栏 -->
+        <div class="top-bar">
+            <button class="toggle-sidebar-btn" onclick="toggleSidebar()">☰</button>
+        </div>
+
+        <!-- Logo -->
+        <div class="header">
+            <div class="logo-row">
+                <img src="https://www.modelscope.cn/api/v1/studio/gongjy/MiniMind/repo?Revision=master&FilePath=images%2Flogo2.png&View=true" alt="MiniMind Logo">
+                <span id="sloganText">Hi, I'm MiniMind2</span>
+            </div>
+            <div class="subtitle">
+                内容完全由AI生成，请务必仔细甄别<br>
+                Content AI-generated, please discern with care
+            </div>
+        </div>
+
+        <!-- 标签页切换 -->
+        <div class="tab-bar">
+            <button class="tab-btn active" onclick="switchTab('chat')">💬 对话</button>
+            <button class="tab-btn" onclick="switchTab('pretrain')">🏋️ 预训练</button>
+            <button class="tab-btn" onclick="switchTab('sft')">🎯 SFT微调</button>
+            <button class="tab-btn" onclick="switchTab('dpo')">🤝 DPO对齐</button>
+        </div>
+
+        <!-- 对话标签页 -->
+        <div class="tab-panel active" id="tab-chat">
+            <!-- 聊天区域 -->
+            <div class="chat-container" id="chatContainer">
+                <!-- 消息将动态插入这里 -->
+            </div>
+            <!-- 输入区域 -->
+            <div class="input-area">
+                <form id="chatForm" onsubmit="handleSubmit(event)">
+                    <input type="text" id="chatInput" placeholder="给 MiniMind 发送消息" autocomplete="off">
+                    <button type="submit" id="sendBtn">发送</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- 预训练标签页 -->
+        <div class="tab-panel" id="tab-pretrain">
+            <div class="train-panel">
+                <div class="train-section">
+                    <h4>📁 数据与输出</h4>
+                    <div class="train-grid">
+                        <div class="train-field">
+                            <label>数据路径</label>
+                            <input type="text" id="pt-data-path" value="../dataset/pretrain_hq.jsonl">
+                            <span class="field-hint">预训练语料 .jsonl 文件</span>
+                        </div>
+                        <div class="train-field">
+                            <label>保存目录</label>
+                            <input type="text" id="pt-save-dir" value="../out">
+                        </div>
+                        <div class="train-field">
+                            <label>权重前缀</label>
+                            <input type="text" id="pt-save-weight" value="pretrain">
+                            <span class="field-hint">输出 ../out/pretrain.bin</span>
+                        </div>
+                        <div class="train-field">
+                            <label>基础权重（none=从头）</label>
+                            <input type="text" id="pt-from-weight" value="none">
+                        </div>
+                    </div>
+                </div>
+                <div class="train-section">
+                    <h4>⚙️ 训练超参数</h4>
+                    <div class="train-grid">
+                        <div class="train-field">
+                            <label>训练轮数 (Epochs)</label>
+                            <input type="number" id="pt-epochs" value="1" min="1">
+                        </div>
+                        <div class="train-field">
+                            <label>Batch Size</label>
+                            <input type="number" id="pt-batch-size" value="32" min="1">
+                        </div>
+                        <div class="train-field">
+                            <label>学习率</label>
+                            <input type="text" id="pt-lr" value="5e-4">
+                        </div>
+                        <div class="train-field">
+                            <label>梯度累积步数</label>
+                            <input type="number" id="pt-accum" value="8" min="1">
+                        </div>
+                        <div class="train-field">
+                            <label>梯度裁剪</label>
+                            <input type="text" id="pt-grad-clip" value="1.0">
+                        </div>
+                        <div class="train-field">
+                            <label>Warmup 步数</label>
+                            <input type="number" id="pt-warmup" value="100" min="0">
+                        </div>
+                    </div>
+                </div>
+                <div class="train-section">
+                    <h4>🏗️ 模型结构</h4>
+                    <div class="train-grid">
+                        <div class="train-field">
+                            <label>隐藏层维度</label>
+                            <input type="number" id="pt-hidden" value="512">
+                        </div>
+                        <div class="train-field">
+                            <label>层数</label>
+                            <input type="number" id="pt-layers" value="8" min="1">
+                        </div>
+                        <div class="train-field">
+                            <label>最大序列长度</label>
+                            <input type="number" id="pt-seqlen" value="340" min="64">
+                        </div>
+                    </div>
+                </div>
+                <div class="train-section">
+                    <h4>🚀 启动训练</h4>
+                    <div class="train-actions">
+                        <button class="btn-train-start" id="pt-start-btn" onclick="startTrain('pretrain')">▶ 开始预训练</button>
+                        <button class="btn-train-stop"  id="pt-stop-btn"  onclick="stopTrain()">⏹ 停止</button>
+                        <span class="train-status-badge idle" id="pt-status-badge">空闲</span>
+                    </div>
+                </div>
+                <div class="train-section">
+                    <h4>📋 训练日志</h4>
+                    <div class="train-log-wrap">
+                        <button class="btn-copy-log" onclick="copyTrainLog('pretrain')">复制</button>
+                        <div class="train-log-box" id="pt-log-box">等待启动训练...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SFT微调标签页 -->
+        <div class="tab-panel" id="tab-sft">
+            <div class="train-panel">
+                <div class="train-section">
+                    <h4>📁 数据与输出</h4>
+                    <div class="train-grid">
+                        <div class="train-field">
+                            <label>数据路径</label>
+                            <input type="text" id="sft-data-path" value="../dataset/sft_512.jsonl">
+                            <span class="field-hint">SFT指令数据 .jsonl 文件</span>
+                        </div>
+                        <div class="train-field">
+                            <label>保存目录</label>
+                            <input type="text" id="sft-save-dir" value="../out">
+                        </div>
+                        <div class="train-field">
+                            <label>权重前缀</label>
+                            <input type="text" id="sft-save-weight" value="full_sft">
+                        </div>
+                        <div class="train-field">
+                            <label>基础权重（预训练权重名）</label>
+                            <input type="text" id="sft-from-weight" value="pretrain">
+                            <span class="field-hint">建议从预训练权重开始</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="train-section">
+                    <h4>⚙️ 训练超参数</h4>
+                    <div class="train-grid">
+                        <div class="train-field">
+                            <label>训练轮数 (Epochs)</label>
+                            <input type="number" id="sft-epochs" value="6" min="1">
+                        </div>
+                        <div class="train-field">
+                            <label>Batch Size</label>
+                            <input type="number" id="sft-batch-size" value="16" min="1">
+                        </div>
+                        <div class="train-field">
+                            <label>学习率</label>
+                            <input type="text" id="sft-lr" value="1e-6">
+                            <span class="field-hint">SFT使用极小学习率</span>
+                        </div>
+                        <div class="train-field">
+                            <label>梯度累积步数</label>
+                            <input type="number" id="sft-accum" value="1" min="1">
+                        </div>
+                        <div class="train-field">
+                            <label>梯度裁剪</label>
+                            <input type="text" id="sft-grad-clip" value="1.0">
+                        </div>
+                        <div class="train-field">
+                            <label>Warmup 步数</label>
+                            <input type="number" id="sft-warmup" value="100" min="0">
+                        </div>
+                    </div>
+                </div>
+                <div class="train-section">
+                    <h4>🏗️ 模型结构</h4>
+                    <div class="train-grid">
+                        <div class="train-field">
+                            <label>隐藏层维度</label>
+                            <input type="number" id="sft-hidden" value="512">
+                        </div>
+                        <div class="train-field">
+                            <label>层数</label>
+                            <input type="number" id="sft-layers" value="8" min="1">
+                        </div>
+                        <div class="train-field">
+                            <label>最大序列长度</label>
+                            <input type="number" id="sft-seqlen" value="340" min="64">
+                        </div>
+                    </div>
+                </div>
+                <div class="train-section">
+                    <h4>🚀 启动训练</h4>
+                    <div class="train-actions">
+                        <button class="btn-train-start" id="sft-start-btn" onclick="startTrain('sft')">▶ 开始SFT微调</button>
+                        <button class="btn-train-stop"  id="sft-stop-btn"  onclick="stopTrain()">⏹ 停止</button>
+                        <span class="train-status-badge idle" id="sft-status-badge">空闲</span>
+                    </div>
+                </div>
+                <div class="train-section">
+                    <h4>📋 训练日志</h4>
+                    <div class="train-log-wrap">
+                        <button class="btn-copy-log" onclick="copyTrainLog('sft')">复制</button>
+                        <div class="train-log-box" id="sft-log-box">等待启动训练...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- DPO对齐标签页 -->
+        <div class="tab-panel" id="tab-dpo">
+            <div class="train-panel">
+                <div class="train-section">
+                    <h4>📁 数据与输出</h4>
+                    <div class="train-grid">
+                        <div class="train-field">
+                            <label>数据路径</label>
+                            <input type="text" id="dpo-data-path" value="../dataset/dpo.jsonl">
+                            <span class="field-hint">DPO偏好数据 .jsonl 文件</span>
+                        </div>
+                        <div class="train-field">
+                            <label>保存目录</label>
+                            <input type="text" id="dpo-save-dir" value="../out">
+                        </div>
+                        <div class="train-field">
+                            <label>权重前缀</label>
+                            <input type="text" id="dpo-save-weight" value="rlhf">
+                        </div>
+                        <div class="train-field">
+                            <label>基础权重（SFT权重名）</label>
+                            <input type="text" id="dpo-from-weight" value="full_sft">
+                            <span class="field-hint">建议从SFT权重开始</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="train-section">
+                    <h4>⚙️ 训练超参数</h4>
+                    <div class="train-grid">
+                        <div class="train-field">
+                            <label>训练轮数 (Epochs)</label>
+                            <input type="number" id="dpo-epochs" value="6" min="1">
+                        </div>
+                        <div class="train-field">
+                            <label>Batch Size</label>
+                            <input type="number" id="dpo-batch-size" value="16" min="1">
+                        </div>
+                        <div class="train-field">
+                            <label>学习率</label>
+                            <input type="text" id="dpo-lr" value="4e-8">
+                            <span class="field-hint">DPO使用极小学习率</span>
+                        </div>
+                        <div class="train-field">
+                            <label>DPO Beta (温度参数)</label>
+                            <input type="text" id="dpo-beta" value="0.1">
+                            <span class="field-hint">控制偏好强度，建议0.05~0.2</span>
+                        </div>
+                        <div class="train-field">
+                            <label>梯度裁剪</label>
+                            <input type="text" id="dpo-grad-clip" value="1.0">
+                        </div>
+                        <div class="train-field">
+                            <label>Warmup 步数</label>
+                            <input type="number" id="dpo-warmup" value="100" min="0">
+                        </div>
+                    </div>
+                </div>
+                <div class="train-section">
+                    <h4>🏗️ 模型结构</h4>
+                    <div class="train-grid">
+                        <div class="train-field">
+                            <label>隐藏层维度</label>
+                            <input type="number" id="dpo-hidden" value="512">
+                        </div>
+                        <div class="train-field">
+                            <label>层数</label>
+                            <input type="number" id="dpo-layers" value="8" min="1">
+                        </div>
+                        <div class="train-field">
+                            <label>最大序列长度</label>
+                            <input type="number" id="dpo-seqlen" value="340" min="64">
+                        </div>
+                    </div>
+                </div>
+                <div class="train-section">
+                    <h4>🚀 启动训练</h4>
+                    <div class="train-actions">
+                        <button class="btn-train-start" id="dpo-start-btn" onclick="startTrain('dpo')">▶ 开始DPO对齐</button>
+                        <button class="btn-train-stop"  id="dpo-stop-btn"  onclick="stopTrain()">⏹ 停止</button>
+                        <span class="train-status-badge idle" id="dpo-status-badge">空闲</span>
+                    </div>
+                </div>
+                <div class="train-section">
+                    <h4>📋 训练日志</h4>
+                    <div class="train-log-wrap">
+                        <button class="btn-copy-log" onclick="copyTrainLog('dpo')">复制</button>
+                        <div class="train-log-box" id="dpo-log-box">等待启动训练...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // ========== 状态管理 ==========
+        const state = {
+            messages: [],        // 显示用消息 [{role, content}]
+            chatMessages: [],    // 发送给API的消息
+            isGenerating: false
+        };
+
+        const AVATAR_URL = "https://www.modelscope.cn/api/v1/studio/gongjy/MiniMind/repo?Revision=master&FilePath=images%2Flogo2.png&View=true";
+
+        // ========== 侧边栏控制 ==========
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('collapsed');
+        }
+
+        // 滑块值显示
+        document.getElementById('historyNum').addEventListener('input', function() {
+            document.getElementById('historyValue').textContent = this.value;
+        });
+        document.getElementById('maxTokens').addEventListener('input', function() {
+            document.getElementById('maxTokensValue').textContent = this.value;
+        });
+        document.getElementById('temperature').addEventListener('input', function() {
+            document.getElementById('temperatureValue').textContent = this.value;
+        });
+
+        // 模型名称变更时更新标语
+        document.getElementById('apiModelName').addEventListener('input', function() {
+            document.getElementById('sloganText').textContent = "Hi, I'm " + this.value;
+        });
+
+        // ========== 获取设置 ==========
+        function getSettings() {
+            return {
+                historyNum: parseInt(document.getElementById('historyNum').value),
+                maxTokens: parseInt(document.getElementById('maxTokens').value),
+                temperature: parseFloat(document.getElementById('temperature').value),
+                apiUrl: document.getElementById('apiUrl').value,
+                apiModelId: document.getElementById('apiModelId').value,
+                apiModelName: document.getElementById('apiModelName').value,
+                apiKey: document.getElementById('apiKey').value
+            };
+        }
+
+        // ========== 处理推理内容 (think标签) ==========
+        function processAssistantContent(content) {
+            const modelName = document.getElementById('apiModelName').value;
+            if (!modelName.includes('R1')) {
+                return content;
+            }
+
+            // <think>...</think> 完成的推理
+            if (content.includes('<think>') && content.includes('</think>')) {
+                content = content.replace(
+                    /<think>([\s\S]*?)<\/think>/g,
+                    '<details class="think-block"><summary>推理内容（展开）</summary>$1</details>'
+                );
+            }
+            // <think>... 正在推理中
+            else if (content.includes('<think>') && !content.includes('</think>')) {
+                content = content.replace(
+                    /<think>([\s\S]*)$/,
+                    '<details open class="think-block"><summary>推理中...</summary>$1</details>'
+                );
+            }
+            // ...</think> 推理结束但开头缺失
+            else if (!content.includes('<think>') && content.includes('</think>')) {
+                content = content.replace(
+                    /([\s\S]*?)<\/think>/,
+                    '<details class="think-block"><summary>推理内容（展开）</summary>$1</details>'
+                );
+            }
+
+            return content;
+        }
+
+        // ========== 简单Markdown转换 ==========
+        function simpleMarkdown(text) {
+            // 代码块
+            text = text.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+            // 行内代码
+            text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+            // 粗体
+            text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            // 斜体
+            text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');
+            // 换行
+            text = text.replace(/\n/g, '<br>');
+            return text;
+        }
+
+        // ========== 渲染消息 ==========
+        function renderMessages() {
+            const container = document.getElementById('chatContainer');
+            container.innerHTML = '';
+
+            state.messages.forEach((msg, index) => {
+                if (msg.role === 'user') {
+                    const div = document.createElement('div');
+                    div.className = 'message-user';
+                    div.innerHTML = `<div class="bubble">${escapeHtml(msg.content)}</div>`;
+                    container.appendChild(div);
+                } else if (msg.role === 'assistant') {
+                    const div = document.createElement('div');
+                    div.className = 'message-assistant';
+                    div.id = 'msg-' + index;
+
+                    let processedContent = processAssistantContent(msg.content);
+                    processedContent = simpleMarkdown(processedContent);
+
+                    div.innerHTML = `
+                        <img class="avatar" src="${AVATAR_URL}" alt="MiniMind">
+                        <div class="content-wrapper">
+                            <div class="bubble">${processedContent}</div>
+                        </div>
+                        <button class="delete-btn" onclick="deleteMessage(${index})" title="删除此对话">×</button>
+                    `;
+                    container.appendChild(div);
+                }
+            });
+
+            scrollToBottom();
+        }
+
+        // ========== 转义HTML ==========
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ========== 滚动到底部 ==========
+        function scrollToBottom() {
+            const container = document.getElementById('chatContainer');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // ========== 删除消息 ==========
+        function deleteMessage(index) {
+            // 删除assistant消息和对应的user消息
+            if (state.messages[index].role === 'assistant' && index > 0) {
+                state.messages.splice(index - 1, 2);
+                state.chatMessages.splice(index - 1, 2);
+            }
+            renderMessages();
+        }
+
+        // ========== 清除对话 ==========
+        function clearChat() {
+            state.messages = [];
+            state.chatMessages = [];
+            renderMessages();
+        }
+
+        // ========== 提交消息 ==========
+        async function handleSubmit(event) {
+            event.preventDefault();
+
+            const input = document.getElementById('chatInput');
+            const prompt = input.value.trim();
+            if (!prompt || state.isGenerating) return;
+
+            const settings = getSettings();
+
+            // 添加用户消息
+            state.messages.push({ role: 'user', content: prompt.substring(0, settings.maxTokens) });
+            state.chatMessages.push({ role: 'user', content: prompt.substring(0, settings.maxTokens) });
+
+            input.value = '';
+            state.isGenerating = true;
+            document.getElementById('sendBtn').disabled = true;
+
+            // 渲染用户消息
+            renderMessages();
+
+            // 准备API请求的消息历史
+            const historyNum = settings.historyNum + 1;
+            const conversationHistory = state.chatMessages.slice(-historyNum);
+
+            // 添加空的assistant消息用于流式填充
+            state.messages.push({ role: 'assistant', content: '' });
+            const assistantIndex = state.messages.length - 1;
+
+            // 渲染带loading指示器的assistant消息
+            appendTypingIndicator();
+
+            try {
+                // 调用OpenAI兼容流式API
+                const apiBase = settings.apiUrl.replace(/\/+$/, '');
+                const response = await fetch(apiBase + '/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + settings.apiKey
+                    },
+                    body: JSON.stringify({
+                        model: settings.apiModelId,
+                        messages: conversationHistory,
+                        temperature: settings.temperature,
+                        max_tokens: settings.maxTokens,
+                        stream: true
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API请求失败: ${response.status} ${response.statusText}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let answer = '';
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+
+                    // 处理SSE数据
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // 保留不完整的行
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.substring(6);
+                            if (data === '[DONE]') {
+                                break;
+                            }
+                            try {
+                                const parsed = JSON.parse(data);
+                                if (parsed.choices && parsed.choices[0]) {
+                                    const delta = parsed.choices[0].delta;
+                                    if (delta && delta.content) {
+                                        answer += delta.content;
+                                        state.messages[assistantIndex].content = answer;
+                                        updateAssistantMessage(assistantIndex, answer);
+                                    }
+                                }
+                                // 处理后端直接返回content字段的情况
+                                if (parsed.content) {
+                                    answer += parsed.content;
+                                    state.messages[assistantIndex].content = answer;
+                                    updateAssistantMessage(assistantIndex, answer);
+                                }
+                                // 处理error
+                                if (parsed.error) {
+                                    answer = `错误: ${parsed.error}`;
+                                    state.messages[assistantIndex].content = answer;
+                                    updateAssistantMessage(assistantIndex, answer);
+                                }
+                            } catch (e) {
+                                // 忽略解析错误
+                            }
+                        }
+                    }
+                }
+
+                state.chatMessages.push({ role: 'assistant', content: answer });
+
+            } catch (error) {
+                state.messages[assistantIndex].content = `API调用出错: ${error.message}`;
+                renderMessages();
+            }
+
+            state.isGenerating = false;
+            document.getElementById('sendBtn').disabled = false;
+            document.getElementById('chatInput').focus();
+        }
+
+        // ========== 添加加载指示器 ==========
+        function appendTypingIndicator() {
+            const container = document.getElementById('chatContainer');
+            const div = document.createElement('div');
+            div.className = 'message-assistant';
+            div.id = 'typing-indicator';
+            div.innerHTML = `
+                <img class="avatar" src="${AVATAR_URL}" alt="MiniMind">
+                <div class="content-wrapper">
+                    <div class="bubble">
+                        <div class="typing-indicator"><span></span><span></span><span></span></div>
+                    </div>
+                </div>
+            `;
+            container.appendChild(div);
+            scrollToBottom();
+        }
+
+        // ========== 更新助手消息（流式） ==========
+        function updateAssistantMessage(index, content) {
+            // 移除typing indicator
+            const typingEl = document.getElementById('typing-indicator');
+            if (typingEl) typingEl.remove();
+
+            const container = document.getElementById('chatContainer');
+            let msgEl = document.getElementById('msg-' + index);
+
+            let processedContent = processAssistantContent(content);
+            processedContent = simpleMarkdown(processedContent);
+
+            if (!msgEl) {
+                msgEl = document.createElement('div');
+                msgEl.className = 'message-assistant';
+                msgEl.id = 'msg-' + index;
+                msgEl.innerHTML = `
+                    <img class="avatar" src="${AVATAR_URL}" alt="MiniMind">
+                    <div class="content-wrapper">
+                        <div class="bubble">${processedContent}</div>
+                    </div>
+                    <button class="delete-btn" onclick="deleteMessage(${index})" title="删除此对话">×</button>
+                `;
+                container.appendChild(msgEl);
+            } else {
+                const bubble = msgEl.querySelector('.bubble');
+                if (bubble) {
+                    bubble.innerHTML = processedContent;
+                }
+            }
+
+            scrollToBottom();
+        }
+
+        // ========== 键盘快捷键 ==========
+        document.getElementById('chatInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                // Enter发送
+                // form的onsubmit已经处理了
+            }
+        });
+
+        // 页面加载完成后聚焦输入框
+        window.addEventListener('load', function() {
+            document.getElementById('chatInput').focus();
+        });
+
+        // ========== 标签页切换 ==========
+        function switchTab(name) {
+            document.querySelectorAll('.tab-btn').forEach((btn, i) => {
+                const names = ['chat', 'pretrain', 'sft', 'dpo'];
+                btn.classList.toggle('active', names[i] === name);
+            });
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            document.getElementById('tab-' + name).classList.add('active');
+            if (name === 'chat') document.getElementById('chatInput').focus();
+        }
+
+        // ========== 训练功能 ==========
+
+        let trainLogES = null;       // EventSource
+        let currentTrainType = null; // 当前训练类型
+
+        // 获取训练参数
+        function getTrainParams(type) {
+            // HTML中pretrain标签页的元素前缀是pt，sft/dpo保持原样
+            const prefix = type === 'pretrain' ? 'pt' : type;
+            const p = id => document.getElementById(prefix + '-' + id);
+            const base = {
+                type,
+                save_dir:           p('save-dir').value,
+                save_weight:        p('save-weight').value,
+                epochs:             parseInt(p('epochs').value) || 1,
+                batch_size:         parseInt(p('batch-size').value) || 16,
+                learning_rate:      parseFloat(p('lr').value) || 1e-4,
+                data_path:          p('data-path').value,
+                from_weight:        p('from-weight').value,
+                hidden_size:        parseInt(p('hidden').value) || 512,
+                num_hidden_layers:  parseInt(p('layers').value) || 8,
+                max_seq_len:        parseInt(p('seqlen').value) || 340,
+                grad_clip:          parseFloat(p('grad-clip').value) || 1.0,
+                warmup_steps:       parseInt(p('warmup').value) || 100,
+            };
+            if (type === 'pretrain') {
+                base.accumulation_steps = parseInt(p('accum').value) || 8;
+            } else if (type === 'sft') {
+                base.accumulation_steps = parseInt(p('accum').value) || 1;
+            } else if (type === 'dpo') {
+                base.dpo_beta = parseFloat(p('beta').value) || 0.1;
+            }
+            return base;
+        }
+
+        // 更新UI状态
+        function setTrainUI(type, status) {
+            const prefix = type === 'pretrain' ? 'pt' : type;
+            const startBtn  = document.getElementById(prefix + '-start-btn');
+            const stopBtn   = document.getElementById(prefix + '-stop-btn');
+            const badge     = document.getElementById(prefix + '-status-badge');
+            const statusMap = { idle: '空闲', running: '训练中...', finished: '已完成', stopped: '已停止', error: '出错' };
+
+            badge.className = 'train-status-badge ' + (status || 'idle');
+            badge.textContent = statusMap[status] || status;
+
+            if (status === 'running') {
+                startBtn.disabled = true;
+                stopBtn.style.display = 'inline-block';
+            } else {
+                startBtn.disabled = false;
+                stopBtn.style.display = 'none';
+            }
+        }
+
+        // 追加日志
+        function appendTrainLog(type, lines) {
+            const prefix = type === 'pretrain' ? 'pt' : type;
+            const box = document.getElementById(prefix + '-log-box');
+            if (!box) return;
+            lines.forEach(line => {
+                const span = document.createElement('span');
+                if (line.startsWith('[系统]')) span.className = 'log-system';
+                else if (line.startsWith('[错误]')) span.className = 'log-error';
+                else span.className = 'log-normal';
+                span.textContent = line + '\n';
+                box.appendChild(span);
+            });
+            box.scrollTop = box.scrollHeight;
+        }
+
+        // 复制日志
+        function copyTrainLog(type) {
+            const prefix = type === 'pretrain' ? 'pt' : type;
+            const box = document.getElementById(prefix + '-log-box');
+            if (!box) return;
+            const text = box.innerText || box.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = box.parentElement.querySelector('.btn-copy-log');
+                if (!btn) return;
+                btn.textContent = '已复制 ✓';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = '复制';
+                    btn.classList.remove('copied');
+                }, 2000);
+            }).catch(() => {
+                // 降级方案：使用 execCommand
+                const ta = document.createElement('textarea');
+                ta.value = box.innerText || box.textContent;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                const btn = box.parentElement.querySelector('.btn-copy-log');
+                if (btn) {
+                    btn.textContent = '已复制 ✓';
+                    btn.classList.add('copied');
+                    setTimeout(() => { btn.textContent = '复制'; btn.classList.remove('copied'); }, 2000);
+                }
+            });
+        }
+
+        // 清空日志
+        function clearTrainLog(type) {
+            const prefix = type === 'pretrain' ? 'pt' : type;
+            const box = document.getElementById(prefix + '-log-box');
+            if (box) box.innerHTML = '';
+        }
+
+        // 获取训练服务地址（留空则使用相对路径，即当前服务）
+        function getTrainUrl() {
+            const el = document.getElementById('trainUrl');
+            if (!el) return '';
+            return el.value.replace(/\/+$/, '');
+        }
+
+        // 启动日志SSE监听
+        function startLogStream(type) {
+            if (trainLogES) { trainLogES.close(); trainLogES = null; }
+            trainLogES = new EventSource(getTrainUrl() + '/api/train/logs');
+            trainLogES.onmessage = function(e) {
+                try {
+                    const data = JSON.parse(e.data);
+                    if (data.new_logs && data.new_logs.length > 0) {
+                        appendTrainLog(type, data.new_logs);
+                    }
+                    if (data.status && data.status !== 'running') {
+                        setTrainUI(type, data.status);
+                        trainLogES.close();
+                        trainLogES = null;
+                    }
+                } catch(err) {}
+            };
+            trainLogES.onerror = function() {
+                trainLogES.close();
+                trainLogES = null;
+            };
+        }
+
+        // 启动训练
+        async function startTrain(type) {
+            const params = getTrainParams(type);
+            clearTrainLog(type);
+            setTrainUI(type, 'running');
+            currentTrainType = type;
+
+            try {
+                const resp = await fetch(getTrainUrl() + '/api/train/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(params)
+                });
+                let data = {};
+                try {
+                    data = await resp.json();
+                } catch(_) {
+                    const text = await resp.text().catch(() => '');
+                    data = { error: text || `HTTP ${resp.status}` };
+                }
+                if (!resp.ok) {
+                    appendTrainLog(type, ['[错误] ' + (data.error || '启动失败')]);
+                    setTrainUI(type, 'error');
+                    return;
+                }
+                appendTrainLog(type, ['[系统] 训练任务已提交，ID: ' + data.id]);
+                startLogStream(type);
+            } catch(err) {
+                appendTrainLog(type, ['[错误] 请求失败: ' + err.message]);
+                setTrainUI(type, 'error');
+            }
+        }
+
+        // 停止训练
+        async function stopTrain() {
+            try {
+                const resp = await fetch(getTrainUrl() + '/api/train/stop', { method: 'POST' });
+                let data = {};
+                try { data = await resp.json(); } catch(_) {}
+                if (currentTrainType) {
+                    appendTrainLog(currentTrainType, ['[系统] ' + (data.message || '已发送停止指令')]);
+                    setTrainUI(currentTrainType, 'stopped');
+                }
+            } catch(err) {
+                console.error('停止训练失败:', err);
+            }
+        }
+    </script>
+</body>
+</html>

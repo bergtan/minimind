@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -106,6 +109,12 @@ func (s *Server) SetupRouter() *gin.Engine {
 	router.GET("/metrics", s.Metrics)
 	router.GET("/stats", s.Stats)
 	router.GET("/docs", s.Docs)
+
+	// 训练接口
+	router.POST("/api/train/start", s.HandleTrainStart)
+	router.POST("/api/train/stop", s.HandleTrainStop)
+	router.GET("/api/train/status", s.HandleTrainStatus)
+	router.GET("/api/train/logs", s.HandleTrainLogs)
 
 	return router
 }
@@ -481,33 +490,57 @@ func (s *Server) Stats(c *gin.Context) {
 	})
 }
 
-// Docs API文档
+// Docs Web聊天界面
 func (s *Server) Docs(c *gin.Context) {
-	docs := gin.H{
-		"title":       "GoMiniMind API Documentation",
-		"version":     "2.0.0",
-		"description": "轻量级语言模型API服务",
-		"endpoints": gin.H{
-			"openai_compatible": gin.H{
-				"chat":       "/v1/chat/completions",
-				"completion": "/v1/completions",
-				"embedding":  "/v1/embeddings",
-				"models":     "/v1/models",
-			},
-			"custom": gin.H{
-				"health":          "/api/v1/health",
-				"batch_chat":      "/api/v1/batch/chat",
-				"batch_embedding": "/api/v1/batch/embeddings",
-				"metrics":         "/api/v1/metrics",
-				"stats":           "/api/v1/stats",
-			},
-		},
-		"authentication": "Bearer Token authentication supported",
-		"rate_limiting":  "Rate limiting enabled",
-		"caching":        "Response caching enabled",
+	htmlPath := findIndexHTML()
+	if htmlPath != "" {
+		c.File(htmlPath)
+		return
+	}
+	// 找不到index.html时降级为简单提示页
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.String(http.StatusOK, `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>GoMiniMind</title></head><body>
+<h2>GoMiniMind API 服务运行中</h2>
+<p>Web界面文件未找到，请启动 <code>web_demo</code> 服务（端口7860）访问完整界面。</p>
+<p>API端点：<a href="/v1/chat/completions">/v1/chat/completions</a></p>
+</body></html>`)
+}
+
+// findIndexHTML 查找index.html文件路径
+func findIndexHTML() string {
+	candidates := []string{}
+
+	// 1. 相对于可执行文件
+	if execPath, err := os.Executable(); err == nil {
+		candidates = append(candidates,
+			filepath.Join(filepath.Dir(execPath), "templates", "index.html"),
+			filepath.Join(filepath.Dir(execPath), "..", "web_demo", "templates", "index.html"),
+		)
 	}
 
-	c.JSON(http.StatusOK, docs)
+	// 2. 相对于当前工作目录
+	if cwd, err := os.Getwd(); err == nil {
+		candidates = append(candidates,
+			filepath.Join(cwd, "cmd", "web_demo", "templates", "index.html"),
+			filepath.Join(cwd, "templates", "index.html"),
+		)
+	}
+
+	// 3. 相对于源文件位置
+	if _, filename, _, ok := runtime.Caller(0); ok {
+		// internal/api/server.go -> 项目根目录
+		root := filepath.Join(filepath.Dir(filename), "..", "..")
+		candidates = append(candidates,
+			filepath.Join(root, "cmd", "web_demo", "templates", "index.html"),
+		)
+	}
+
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
 }
 
 // ========== 中间件 ==========

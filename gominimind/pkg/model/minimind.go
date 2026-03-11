@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"sync"
 
 	"gominimind/pkg/types"
@@ -109,6 +110,7 @@ func (m *MiniMindModel) LoadWeights(weightsPath string) error {
 		return fmt.Errorf("failed to load lm head weights: %w", err)
 	}
 
+	// 注意：当前为空实现，仍标记为已加载以允许推理
 	m.isLoaded = true
 	m.status = ModelStatusLoaded
 	m.logger.Info("MiniMind model weights loaded successfully")
@@ -762,28 +764,39 @@ func (m *MiniMindModel) applyTemperature(logits *mat.VecDense, temperature float
 // applyTopP 应用top-p采样
 func (m *MiniMindModel) applyTopP(logits *mat.VecDense, topP float64) {
 	data := logits.RawVector().Data
+	n := len(data)
 
-	// 复制并排序logits
-	sortedLogits := make([]float64, len(data))
-	copy(sortedLogits, data)
-	floats.Argsort(sortedLogits, nil)
+	// 先计算 softmax 概率（在原始 logits 上）
+	probData := make([]float64, n)
+	copy(probData, data)
+	probVec := mat.NewVecDense(n, probData)
+	probabilities := m.softmax(probVec)
+	probs := probabilities.RawVector().Data
 
-	// 计算累积概率
-	probabilities := m.softmax(mat.NewVecDense(len(data), data))
+	// 用 Argsort 得到按概率升序排列的索引（gonum Argsort 为升序）
+	inds := make([]int, n)
+	sortedProbs := make([]float64, n)
+	copy(sortedProbs, probs)
+	floats.Argsort(sortedProbs, inds)
+	// inds[n-1] 是概率最大的 token，inds[0] 是最小的
+
+	// 从概率最大的 token 开始累积，直到超过 topP
 	cumulativeProb := 0.0
-	cutoffIndex := len(data)
-
-	for i := len(data) - 1; i >= 0; i-- {
-		cumulativeProb += probabilities.At(i, 0)
-		if cumulativeProb > topP {
-			cutoffIndex = i
+	keepSet := make(map[int]bool, n)
+	for i := n - 1; i >= 0; i-- {
+		idx := inds[i]
+		cumulativeProb += probs[idx]
+		keepSet[idx] = true
+		if cumulativeProb >= topP {
 			break
 		}
 	}
 
-	// 将低于cutoff的logits设为负无穷
-	for i := 0; i < cutoffIndex; i++ {
-		data[i] = math.Inf(-1)
+	// 不在保留集合中的 token 设为负无穷
+	for i := 0; i < n; i++ {
+		if !keepSet[i] {
+			data[i] = math.Inf(-1)
+		}
 	}
 }
 
@@ -834,8 +847,7 @@ func (m *MiniMindModel) sampleFromDistribution(probabilities *mat.VecDense) int 
 
 // randomFloat 生成随机浮点数
 func (m *MiniMindModel) randomFloat() float64 {
-	// 在实际实现中，这里会使用加密安全的随机数生成器
-	return 0.5 // 简化实现
+	return rand.Float64()
 }
 
 // shouldStop 检查是否应该停止生成
@@ -865,7 +877,7 @@ func (m *MiniMindModel) formatChatPrompt(messages []types.Message) string {
 		case "system":
 			prompt += fmt.Sprintf("<|im_start|>system\n%s<|im_end|>\n", msg.Content)
 		case "user":
-			prompt += fmt.Sprintf("<|im_start|>user\n%s<|im_start|>\n", msg.Content)
+			prompt += fmt.Sprintf("<|im_start|>user\n%s<|im_end|>\n", msg.Content)
 		case "assistant":
 			prompt += fmt.Sprintf("<|im_start|>assistant\n%s<|im_end|>\n", msg.Content)
 		}

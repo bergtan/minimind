@@ -1,0 +1,60 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Web Demo",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/gominimind/cmd/web_demo",
+            "cwd": "${workspaceFolder}/gominimind/cmd/web_demo",
+            "args": ["-port", "7860"],
+            "env": {},
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "OpenAI API Server",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/gominimind/cmd/serve_openai_api",
+            "cwd": "${workspaceFolder}/gominimind",
+            "args": [],
+            "env": {},
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Train Pretrain",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/gominimind/cmd/train_pretrain",
+            "cwd": "${workspaceFolder}/gominimind",
+            "args": [],
+            "env": {},
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Train SFT",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/gominimind/cmd/train_sft",
+            "cwd": "${workspaceFolder}/gominimind",
+            "args": [],
+            "env": {},
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Train DPO",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/gominimind/cmd/train_dpo",
+            "cwd": "${workspaceFolder}/gominimind",
+            "args": [],
+            "env": {},
+            "console": "integratedTerminal"
+        }
+    ]
+}

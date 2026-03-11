@@ -275,12 +275,14 @@ func setupRouter(server *api.Server) *gin.Engine {
 		custom.GET("/stats", server.Stats)
 	}
 
-	// 根路径重定向到文档
-	router.GET("/", func(c *gin.Context) {
-		c.Redirect(http.StatusMovedPermanently, "/docs")
-	})
+	// 训练接口
+	router.POST("/api/train/start", server.HandleTrainStart)
+	router.POST("/api/train/stop", server.HandleTrainStop)
+	router.GET("/api/train/status", server.HandleTrainStatus)
+	router.GET("/api/train/logs", server.HandleTrainLogs)
 
-	// API文档
+	// 根路径和 /docs 都显示 Web 聊天界面
+	router.GET("/", server.Docs)
 	router.GET("/docs", server.Docs)
 
 	return router
@@ -313,4 +315,3 @@ func printStartupInfo(cfg *config.Config, log *logrus.Logger) {
 	
 	log.Info("=== Startup completed ===")
 }
-
