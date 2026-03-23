@@ -454,20 +454,25 @@ func runTrainTask(ctx context.Context, task *TrainTask, args []string) {
 		line := scanner.Text()
 		addLog(line)
 	}
+	if scanErr := scanner.Err(); scanErr != nil {
+		addLog(fmt.Sprintf("[错误] 读取训练输出失败: %v", scanErr))
+	}
 
 	// 等待进程结束
 	err = cmd.Wait()
-	task.mu.Lock()
+	finalStatus := "finished"
+	finalLog := "[系统] 训练完成！"
 	if ctx.Err() != nil {
-		task.Status = "stopped"
-		addLog("[系统] 训练已停止")
+		finalStatus = "stopped"
+		finalLog = "[系统] 训练已停止"
 	} else if err != nil {
-		task.Status = "error"
-		addLog(fmt.Sprintf("[错误] 训练异常退出: %v", err))
-	} else {
-		task.Status = "finished"
-		addLog("[系统] 训练完成！")
+		finalStatus = "error"
+		finalLog = fmt.Sprintf("[错误] 训练异常退出: %v", err)
 	}
+
+	task.mu.Lock()
+	task.Status = finalStatus
+	task.Logs = append(task.Logs, finalLog)
 	task.mu.Unlock()
 }
 

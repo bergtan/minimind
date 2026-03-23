@@ -585,6 +585,13 @@ func (s *Server) CORSMiddleware() gin.HandlerFunc {
 // RateLimitMiddleware 限流中间件
 func (s *Server) RateLimitMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// 训练日志SSE与训练状态查询可能是长连接/高频请求，避免被全局限流误伤
+		path := c.Request.URL.Path
+		if path == "/api/train/logs" || path == "/api/train/status" {
+			c.Next()
+			return
+		}
+
 		clientIP := c.ClientIP()
 
 		// 获取或创建限流器
